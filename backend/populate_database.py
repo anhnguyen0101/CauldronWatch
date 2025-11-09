@@ -46,6 +46,12 @@ def populate_all_data():
         market = client.get_market(use_cache=False)
         print(f"   ✅ Market: {market.name} ({market.id})")
         
+        # 2.5. Fetch and cache network
+        print("\n2.5️⃣ Fetching network graph...")
+        network = client.get_network(use_cache=False)
+        print(f"   ✅ Network: {len(network.edges)} edges")
+        print(f"      Nodes: {len(network.all_nodes)} unique nodes")
+        
         # 3. Fetch and cache couriers
         print("\n3️⃣  Fetching couriers...")
         couriers = client.get_couriers(use_cache=False)
@@ -111,6 +117,10 @@ def populate_all_data():
         market_cached = cache.get_cached_market(max_age_minutes=999999)
         print(f"   Market: {1 if market_cached else 0} record")
         
+        # Count network edges
+        network_cached = cache.get_cached_network(max_age_minutes=999999)
+        print(f"   Network edges: {len(network_cached.edges) if network_cached else 0} records")
+        
         # Count couriers
         couriers_cached = cache.get_cached_couriers(max_age_minutes=999999)
         print(f"   Couriers: {len(couriers_cached) if couriers_cached else 0} records")
@@ -128,6 +138,7 @@ def populate_all_data():
         print("   - historical_data")
         print("   - tickets")
         print("   - market")
+        print("   - network_edges")
         print("   - couriers")
         print("   - cache_metadata")
         

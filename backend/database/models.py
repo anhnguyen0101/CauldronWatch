@@ -89,6 +89,27 @@ class CourierCache(Base):
         return f"<CourierCache(courier_id={self.courier_id})>"
 
 
+class NetworkEdgeCache(Base):
+    """Cache for network graph edges"""
+    __tablename__ = "network_edges"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    from_node = Column(String, nullable=False, index=True)
+    to_node = Column(String, nullable=False, index=True)
+    travel_time_minutes = Column(Float, nullable=True)
+    weight = Column(Float, nullable=True)
+    distance = Column(Float, nullable=True)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Composite index for faster queries
+    __table_args__ = (
+        {'sqlite_autoincrement': True},
+    )
+    
+    def __repr__(self):
+        return f"<NetworkEdgeCache(from={self.from_node}, to={self.to_node}, time={self.travel_time_minutes})>"
+
+
 class CacheMetadata(Base):
     """Metadata about cache state"""
     __tablename__ = "cache_metadata"

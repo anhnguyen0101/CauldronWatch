@@ -12,6 +12,7 @@ from backend.database.models import (
     TicketCache,
     MarketCache,
     CourierCache,
+    NetworkEdgeCache,
     CacheMetadata
 )
 from backend.models.schemas import (
@@ -20,6 +21,8 @@ from backend.models.schemas import (
     TicketDto,
     MarketDto,
     CourierDto,
+    NetworkDto,
+    EdgeDto,
     HistoricalDataMetadataDto
 )
 
@@ -259,6 +262,42 @@ class CacheManager:
                 capacity=c.capacity,
                 speed=c.speed
             ) for c in cached]
+        return None
+    
+    # ==================== Network Caching ====================
+    
+    def cache_network(self, network: NetworkDto):
+        """Cache network edges"""
+        # Clear old edges (network structure can change, so replace all)
+        self.db.query(NetworkEdgeCache).delete()
+        
+        # Add new edges
+        for edge in network.edges:
+            self.db.add(NetworkEdgeCache(
+                from_node=edge.from_node,
+                to_node=edge.to_node,
+                travel_time_minutes=edge.travel_time_minutes,
+                weight=edge.weight,
+                distance=edge.distance
+            ))
+        self.db.commit()
+    
+    def get_cached_network(self, max_age_minutes: int = 60) -> Optional[NetworkDto]:
+        """Get cached network if fresh enough"""
+        cutoff = datetime.utcnow() - timedelta(minutes=max_age_minutes)
+        cached = self.db.query(NetworkEdgeCache).filter(
+            NetworkEdgeCache.last_updated >= cutoff
+        ).all()
+        
+        if cached:
+            edges = [EdgeDto(
+                from_node=e.from_node,
+                to_node=e.to_node,
+                travel_time_minutes=e.travel_time_minutes,
+                weight=e.weight,
+                distance=e.distance
+            ) for e in cached]
+            return NetworkDto(edges=edges)
         return None
     
     # ==================== Cache Metadata ====================

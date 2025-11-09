@@ -263,9 +263,8 @@ class CachedEOGClient:
         # Fetch from API
         market = self.eog_client.get_market()
         
-        # Cache the results
-        if use_cache:
-            self.cache.cache_market(market)
+        # Cache the results (always cache fetched data)
+        self.cache.cache_market(market)
         
         return market
     
@@ -281,24 +280,34 @@ class CachedEOGClient:
         # Fetch from API
         couriers = self.eog_client.get_couriers()
         
-        # Cache the results
-        if use_cache:
-            self.cache.cache_couriers(couriers)
+        # Cache the results (always cache fetched data)
+        self.cache.cache_couriers(couriers)
         
         return couriers
     
-    # ==================== Network (no caching - static) ====================
+    # ==================== Network ====================
     
-    def get_network(self):
-        """Get network - no caching needed (static data)"""
-        return self.eog_client.get_network()
+    def get_network(self, use_cache: bool = True):
+        """Get network with caching"""
+        if use_cache:
+            cached = self.cache.get_cached_network(max_age_minutes=self.cache_ttl)
+            if cached:
+                return cached
+        
+        # Fetch from API
+        network = self.eog_client.get_network()
+        
+        # Cache the results (always cache fetched data)
+        self.cache.cache_network(network)
+        
+        return network
     
     def get_graph_neighbors(self, node_id: str):
-        """Get graph neighbors - no caching needed"""
+        """Get graph neighbors - no caching needed (can be derived from network)"""
         return self.eog_client.get_graph_neighbors(node_id)
     
     def get_graph_neighbors_directed(self, node_id: str):
-        """Get directed graph neighbors - no caching needed"""
+        """Get directed graph neighbors - no caching needed (can be derived from network)"""
         return self.eog_client.get_graph_neighbors_directed(node_id)
     
     def get_data_metadata(self, use_cache: bool = True):
