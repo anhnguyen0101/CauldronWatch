@@ -75,15 +75,12 @@ export function startSocket(onMessage) {
           console.log(`🔄 Reconnecting in ${delay/1000}s... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`)
           reconnectTimeout = setTimeout(connect, delay)
         } else {
-          console.error('❌ Max reconnection attempts reached. Falling back to mock data.')
-          // Fallback to mock socket
-          return startMockSocket(onMessage)
+          console.error('❌ Max reconnection attempts reached. Backend is not available.')
         }
       }
     } catch (error) {
       console.error('❌ WebSocket connection error:', error)
-      // Fallback to mock socket
-      return startMockSocket(onMessage)
+      console.error('❌ Backend is not available. Please start the backend server.')
     }
   }
 
@@ -107,21 +104,4 @@ export function startSocket(onMessage) {
   }
 }
 
-// Fallback mock socket if WebSocket fails
-export function startMockSocket(onMessage) {
-  const ids = ['cauldron_001', 'cauldron_002', 'cauldron_003']
-  let closed = false
-  const interval = setInterval(() => {
-    if (closed) return
-    const updates = ids.map(id => ({
-      id,
-      level: Math.max(0, Math.min(100, Math.round(50 + (Math.random() - 0.5) * 40)))
-    }))
-    onMessage({ type: 'levels', data: updates })
-  }, 1500)
-
-  return {
-    close: () => { closed = true; clearInterval(interval) },
-    send: () => {}
-  }
-}
+// Mock socket removed - backend is required
