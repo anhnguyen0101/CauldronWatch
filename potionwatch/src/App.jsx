@@ -6,7 +6,6 @@ import Overview from './pages/Overview'
 import History from './pages/History'
 import Discrepancies from './pages/Discrepancies'
 import Forecast from './pages/Forecast'
-import Settings from './pages/Settings'
 import useInit from './boot/useInit'
 
 export default function App() {
@@ -23,7 +22,6 @@ export default function App() {
             <Route path="/history" element={<History />} />
             <Route path="/discrepancies" element={<Discrepancies />} />
             <Route path="/forecast" element={<Forecast />} />
-            <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>
       </div>
