@@ -5,14 +5,22 @@ import { AlertTriangle, XCircle } from 'lucide-react'
 export default function AlertsPanel() {
   const alerts = usePotionStore(s => s.alerts)
 
+  const hasAlerts = alerts && alerts.length > 0
+  const hasCritical = alerts.some(a => (a.title || '').toLowerCase().includes('overfill') || (a.severity || '') === 'critical')
+
   // Debug: Log alerts whenever they change
   React.useEffect(() => {
     console.log('📊 AlertsPanel: Current alerts:', alerts.length, alerts.map(a => ({ id: a.id, title: a.title })))
   }, [alerts.length, alerts.map(a => a.id).join(',')])
 
   return (
-    <div className="card h-full flex flex-col overflow-hidden">
-      <h3 className="panel-title mb-3 flex-shrink-0">Live Alerts ({alerts.length})</h3>
+    <div className={`card h-full flex flex-col overflow-hidden ${hasAlerts ? 'border-red-400 bg-red-50 dark:bg-red-900/20' : ''} ${hasCritical ? 'animate-pulse' : ''}`}>
+      <h3 className="panel-title mb-3 flex-shrink-0 flex items-center gap-3">
+        {hasAlerts && (
+          <AlertTriangle className={`w-5 h-5 ${hasCritical ? 'text-red-500' : 'text-yellow-400'} ${hasCritical ? 'animate-pulse' : ''}`} />
+        )}
+        <span>Live Alerts ({alerts.length})</span>
+      </h3>
       {alerts.length === 0 ? (
         <div className="text-gray-400 text-sm py-4 flex-1 flex items-center justify-center">No alerts</div>
       ) : (
