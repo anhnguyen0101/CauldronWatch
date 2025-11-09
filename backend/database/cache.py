@@ -25,6 +25,7 @@ from backend.models.schemas import (
     EdgeDto,
     HistoricalDataMetadataDto
 )
+from math import radians, sin, cos, sqrt, atan2
 
 
 class CacheManager:
@@ -267,18 +268,43 @@ class CacheManager:
     # ==================== Network Caching ====================
     
     def cache_network(self, network: NetworkDto):
-        """Cache network edges"""
+        """Cache network edges with calculated weight and distance"""
+        from backend.database.models import CauldronCache, MarketCache
+        
         # Clear old edges (network structure can change, so replace all)
         self.db.query(NetworkEdgeCache).delete()
         
-        # Add new edges
+        # Get all node coordinates (cauldrons + market)
+        node_coords = {}
+        
+        # Get cauldron coordinates
+        cauldrons = self.db.query(CauldronCache).all()
+        for cauldron in cauldrons:
+            node_coords[cauldron.id] = (cauldron.latitude, cauldron.longitude)
+        
+        # Get market coordinates
+        market = self.db.query(MarketCache).first()
+        if market:
+            node_coords[market.id] = (market.latitude, market.longitude)
+        
+        # Add new edges with calculated weight and distance
         for edge in network.edges:
+            # Set weight = travel_time_minutes (if not already set)
+            weight = edge.weight if edge.weight is not None else edge.travel_time_minutes
+            
+            # Calculate distance from coordinates
+            distance = None
+            if edge.from_node in node_coords and edge.to_node in node_coords:
+                from_lat, from_lon = node_coords[edge.from_node]
+                to_lat, to_lon = node_coords[edge.to_node]
+                distance = self.haversine_distance(from_lat, from_lon, to_lat, to_lon)
+            
             self.db.add(NetworkEdgeCache(
                 from_node=edge.from_node,
                 to_node=edge.to_node,
                 travel_time_minutes=edge.travel_time_minutes,
-                weight=edge.weight,
-                distance=edge.distance
+                weight=weight,
+                distance=distance
             ))
         self.db.commit()
     
@@ -352,4 +378,25 @@ class CacheManager:
                 print(f"⚠️  Error parsing cached data metadata: {e}")
                 return None
         return None
+
+    def haversine_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """
+        Calculate the great circle distance between two points 
+        on the earth (specified in decimal degrees)
+        Returns distance in kilometers
+        """
+        # Earth radius in kilometers
+        R = 6371.0
+        
+        # Convert decimal degrees to radians
+        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+        
+        # Haversine formula
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * atan2(sqrt(a), sqrt(1-a))
+        distance = R * c
+        
+        return distance
 
