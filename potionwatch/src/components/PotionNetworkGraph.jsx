@@ -1,25 +1,24 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useMemo } from 'react'
 import bgDark from '../assets/potion_network_bg_dark.png'
 import bgLight from '../assets/potion_network_bg_light.png'
 
 // Props: data = { nodes: [{id,name,x,y,fillPercent,status,isMarket}], links: [{from,to,travel_time_minutes}] }
-export default function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' }){
+function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' }){
   const { nodes: propNodes = [], links: propLinks = [] } = data
-  // Debug: log incoming data shape so we can diagnose missing nodes/links
+  // Debug: log incoming data shape so we can diagnose missing nodes/links (development only)
   useEffect(() => {
-    try {
-      // eslint-disable-next-line no-console
-      console.log('PotionNetworkGraph: received data', { nodes: propNodes.length, links: propLinks.length })
-      if (propNodes.length > 0) {
-        // eslint-disable-next-line no-console
-        console.log('  sample node:', propNodes[0])
-      }
-      if (propLinks.length > 0) {
-        // eslint-disable-next-line no-console
-        console.log('  sample link:', propLinks[0])
-      }
-    } catch (e) {}
-  }, [data])
+    if (process.env.NODE_ENV === 'development') {
+      try {
+        console.log('PotionNetworkGraph: received data', { nodes: propNodes.length, links: propLinks.length })
+        if (propNodes.length > 0) {
+          console.log('  sample node:', propNodes[0])
+        }
+        if (propLinks.length > 0) {
+          console.log('  sample link:', propLinks[0])
+        }
+      } catch (e) {}
+    }
+  }, [propNodes.length, propLinks.length])
   const ref = useRef(null)
   const [dims, setDims] = useState({ width: 800, height: 600 })
   const [hover, setHover] = useState(null)
@@ -40,36 +39,202 @@ export default function PotionNetworkGraph({ data = { nodes: [], links: [] }, cl
     return ()=> ro && ro.disconnect()
   }, [])
 
-  // layout: if nodes provide x,y use them, otherwise auto-circle
+  // layout: if nodes provide lat/lng use them with proper geographic bounds, otherwise use x,y or auto-circle
   const viewW = 800
   const viewH = 600
+  const margin = 50 // Margin for nodes near edges
   const centerX = viewW/2
   const centerY = viewH/2
 
-  const nodes = propNodes.map((n, i) => ({
-    ...n,
-    _index: i
-  }))
+  // Helper function - simple getter, doesn't need memoization
+  const getLatLng = (node) => {
+    const lat = node.latitude ?? node.lat
+    const lng = node.longitude ?? node.lng
+    return { lat, lng }
+  }
 
-  const count = Math.max(1, nodes.length)
-  const layoutRadius = Math.max(120, Math.min(viewW, viewH)/2 - 120)
+  // Memoize nodes array to prevent unnecessary recalculations
+  const nodes = useMemo(() => 
+    propNodes.map((n, i) => ({
+      ...n,
+      _index: i
+    })), [propNodes]
+  )
 
-  const autoPositions = nodes.map((c, i) => {
-    const a = -Math.PI/2 + (i * (2*Math.PI / count))
-    const x = centerX + layoutRadius * Math.cos(a)
-    const y = centerY + layoutRadius * Math.sin(a)
-    return { x, y }
-  })
+  // Check if all nodes have precomputed x, y coordinates (fastest path)
+  const allNodesHaveXY = useMemo(() => {
+    return nodes.length > 0 && nodes.every(n => typeof n.x === 'number' && typeof n.y === 'number')
+  }, [nodes])
 
-  const pos = (node, idx) => {
-    if(typeof node.x === 'number' && typeof node.y === 'number'){
-      // assume 0..1 normalized or absolute coords; if in 0..1, scale to view
-      if(Math.abs(node.x) <= 1 && Math.abs(node.y) <= 1){
-        return { x: node.x * viewW, y: node.y * viewH }
-      }
-      return { x: node.x, y: node.y }
+  // Memoize bounds calculation - only needed as fallback if x, y not available
+  const bounds = useMemo(() => {
+    // If all nodes have precomputed x, y, we don't need bounds calculation
+    if (allNodesHaveXY) {
+      return null
     }
-    return autoPositions[idx] || { x: centerX, y: centerY }
+    
+    const coords = nodes.map(n => getLatLng(n)).filter(c => c.lat != null && c.lng != null)
+    
+    if (coords.length === 0) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('PotionNetworkGraph: No nodes with coordinates found, using fallback layout')
+      }
+      return null
+    }
+
+    const lats = coords.map(c => c.lat)
+    const lngs = coords.map(c => c.lng)
+
+    const minLat = Math.min(...lats)
+    const maxLat = Math.max(...lats)
+    const minLng = Math.min(...lngs)
+    const maxLng = Math.max(...lngs)
+    
+    const latRange = maxLat - minLat
+    const lngRange = maxLng - minLng
+    
+    // Handle case where all points are the same (or very close) - add fixed padding
+    const hasRange = latRange > 0.0001 && lngRange > 0.0001
+    const padding = hasRange ? 0.1 : 0.05
+    
+    // Use minimum range to ensure visible area even if all points are identical
+    const effectiveLatRange = latRange || 0.02 // ~2km at equator
+    const effectiveLngRange = lngRange || 0.02 // ~2km at equator
+
+    const bounds = {
+      minLat: minLat - effectiveLatRange * padding,
+      maxLat: maxLat + effectiveLatRange * padding,
+      minLng: minLng - effectiveLngRange * padding,
+      maxLng: maxLng + effectiveLngRange * padding
+    }
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`PotionNetworkGraph: Calculated bounds for ${coords.length} nodes (fallback mode):`, bounds)
+    }
+    return bounds
+  }, [nodes, allNodesHaveXY, getLatLng])
+
+  const hasRealCoords = bounds != null
+
+  // Memoize coordinate conversion function
+  const latLngToXY = useMemo(() => (lat, lng, bounds) => {
+    if (!bounds) {
+      return { x: centerX, y: centerY }
+    }
+    
+    const latRange = bounds.maxLat - bounds.minLat
+    const lngRange = bounds.maxLng - bounds.minLng
+    
+    // Normalize coordinates to 0-1 range
+    const normalizedX = latRange > 0.001 ? (lng - bounds.minLng) / lngRange : 0.5
+    const normalizedY = latRange > 0.001 ? 1 - ((lat - bounds.minLat) / latRange) : 0.5 // Flip Y axis
+    
+    // Scale to viewBox with margin
+    const x = margin + normalizedX * (viewW - 2 * margin)
+    const y = margin + normalizedY * (viewH - 2 * margin)
+    
+    return { x, y }
+  }, [centerX, centerY, margin, viewW, viewH])
+
+  // Memoize count and layout radius
+  const count = useMemo(() => Math.max(1, nodes.length), [nodes.length])
+  const layoutRadius = useMemo(() => Math.max(120, Math.min(viewW, viewH)/2 - 120), [viewW, viewH])
+
+  // Memoize auto positions for circular layout
+  const autoPositions = useMemo(() => {
+    return nodes.map((c, i) => {
+      const a = -Math.PI/2 + (i * (2*Math.PI / count))
+      const x = centerX + layoutRadius * Math.cos(a)
+      const y = centerY + layoutRadius * Math.sin(a)
+      return { x, y }
+    })
+  }, [nodes, count, centerX, centerY, layoutRadius])
+
+  // Memoize bounds center
+  const boundsCenter = useMemo(() => {
+    if (!bounds) return { x: centerX, y: centerY }
+    return latLngToXY(
+      (bounds.minLat + bounds.maxLat) / 2,
+      (bounds.minLng + bounds.maxLng) / 2,
+      bounds
+    )
+  }, [bounds, latLngToXY, centerX, centerY])
+
+  // Memoize nodes without coordinates
+  const nodesWithoutCoords = useMemo(() => {
+    if (!hasRealCoords) return []
+    return nodes.filter(n => {
+      const coords = getLatLng(n)
+      return coords.lat == null || coords.lng == null
+    })
+  }, [nodes, hasRealCoords])
+
+  // Memoize index map for mixed-mode positioning
+  const nodeIndexInMixedMap = useMemo(() => {
+    const map = new Map()
+    nodesWithoutCoords.forEach((n, idx) => {
+      map.set(n.id, idx)
+    })
+    return map
+  }, [nodesWithoutCoords])
+
+  // Pre-compute all node positions - use backend precomputed coordinates (FAST!)
+  const nodePositions = useMemo(() => {
+    const positionMap = new Map()
+
+    nodes.forEach((node, idx) => {
+      // Priority 1: Use precomputed x, y coordinates from backend (normalized 0-1)
+      // These are calculated once on the backend - fastest option!
+      if(typeof node.x === 'number' && typeof node.y === 'number'){
+        // Backend provides normalized coordinates (0-1), scale to viewBox
+        // Apply margin to keep nodes away from edges
+        positionMap.set(node.id, { 
+          x: margin + node.x * (viewW - 2 * margin), 
+          y: margin + node.y * (viewH - 2 * margin) 
+        })
+        return
+      }
+      
+      // Priority 2: Fallback to lat/lng calculation (only if x, y not available)
+      if (hasRealCoords && bounds) {
+        const coords = getLatLng(node)
+        if (coords.lat != null && coords.lng != null) {
+          positionMap.set(node.id, latLngToXY(coords.lat, coords.lng, bounds))
+          return
+        }
+      }
+      
+      // Priority 3: Fallback to circular layout
+      if (!hasRealCoords) {
+        // No coordinates at all - use circular layout
+        positionMap.set(node.id, autoPositions[idx] || { x: centerX, y: centerY })
+        return
+      }
+      
+      // Mixed mode: hasRealCoords but this node doesn't have coordinates
+      const nodeIndexInMixed = nodeIndexInMixedMap.get(node.id)
+      const mixedRadius = Math.min(viewW, viewH) * 0.15
+      
+      if (nodeIndexInMixed != null && nodesWithoutCoords.length > 1) {
+        // Space them in a circle around bounds center
+        const angle = (nodeIndexInMixed / nodesWithoutCoords.length) * 2 * Math.PI - Math.PI / 2
+        positionMap.set(node.id, {
+          x: boundsCenter.x + mixedRadius * Math.cos(angle),
+          y: boundsCenter.y + mixedRadius * Math.sin(angle)
+        })
+        return
+      }
+      
+      // Single node without coords - place at bounds center
+      positionMap.set(node.id, { x: boundsCenter.x, y: boundsCenter.y })
+    })
+
+    return positionMap
+  }, [nodes, viewW, viewH, margin, hasRealCoords, bounds, getLatLng, latLngToXY, autoPositions, nodeIndexInMixedMap, nodesWithoutCoords, boundsCenter, centerX, centerY])
+
+  // Optimized pos function - O(1) lookup instead of calculations
+  const pos = (node) => {
+    return nodePositions.get(node.id) || { x: centerX, y: centerY }
   }
 
   const statusColor = {
@@ -99,8 +264,11 @@ export default function PotionNetworkGraph({ data = { nodes: [], links: [] }, cl
   const ringWidth = 4
   const circ = 2 * Math.PI * nodeRadius
 
-  // mapping nodes by id
-  const nodeById = new Map(nodes.map((n, i) => [n.id, n]))
+  // Memoize node lookup map for O(1) access
+  const nodeById = useMemo(() => 
+    new Map(nodes.map((n) => [n.id, n])), 
+    [nodes]
+  )
 
   // tooltip helpers
   const toClient = (sx, sy) => {
@@ -166,13 +334,15 @@ export default function PotionNetworkGraph({ data = { nodes: [], links: [] }, cl
               const a = nodeById.get(l.from) || nodeById.get(l.source) || nodeById.get(l.node_id)
               const b = nodeById.get(l.to) || nodeById.get(l.target) || nodeById.get(l.node_id)
               if(!a || !b) {
-                // Log missing references once to help debugging
-                // eslint-disable-next-line no-console
-                console.warn(`PotionNetworkGraph: link ${i} references missing node(s): from=${l.from} to=${l.to}`, l)
+                // Log missing references only in development
+                if (process.env.NODE_ENV === 'development') {
+                  console.warn(`PotionNetworkGraph: link ${i} references missing node(s): from=${l.from} to=${l.to}`, l)
+                }
                 return null
               }
-              const pa = pos(a, nodes.indexOf(a))
-              const pb = pos(b, nodes.indexOf(b))
+              // Use optimized pos function - no index needed anymore
+              const pa = pos(a)
+              const pb = pos(b)
               const mx = (pa.x + pb.x)/2
               const my = (pa.y + pb.y)/2
               const dx = pb.x - pa.x
@@ -207,8 +377,9 @@ export default function PotionNetworkGraph({ data = { nodes: [], links: [] }, cl
 
           {/* nodes */}
           <g>
-            {nodes.map((n, idx) => {
-              const p = pos(n, idx)
+            {nodes.map((n) => {
+              // Use optimized pos function - no index needed anymore
+              const p = pos(n)
               const pct = Math.max(0, Math.min(100, Number(n.fillPercent) || 0))
               const color = statusColor[n.status] || statusColor.normal
               const glowColor = color
@@ -276,3 +447,40 @@ export default function PotionNetworkGraph({ data = { nodes: [], links: [] }, cl
     </div>
   )
 }
+
+// Custom comparison function for React.memo
+// Only re-render if nodes/links actually changed (by content, not just reference)
+function arePropsEqual(prevProps, nextProps) {
+  const prev = prevProps.data
+  const next = nextProps.data
+  
+  // Quick reference check
+  if (prev === next) return true
+  
+  // Check nodes length
+  if (prev.nodes?.length !== next.nodes?.length) return false
+  
+  // Check links length
+  if (prev.links?.length !== next.links?.length) return false
+  
+  // Check if any node levels changed (this is what updates most frequently)
+  // Only compare IDs and fillPercent for performance
+  const prevNodeMap = new Map(prev.nodes.map(n => [n.id, n.fillPercent]))
+  const nextNodeMap = new Map(next.nodes.map(n => [n.id, n.fillPercent]))
+  
+  // If node count changed, re-render
+  if (prevNodeMap.size !== nextNodeMap.size) return false
+  
+  // Check if any fillPercent values changed
+  for (const [id, fillPercent] of prevNodeMap) {
+    if (nextNodeMap.get(id) !== fillPercent) {
+      return false // Level changed - re-render
+    }
+  }
+  
+  // If we get here, nodes and links are the same (by content)
+  // Only re-render if className changed
+  return prevProps.className === nextProps.className
+}
+
+export default React.memo(PotionNetworkGraph, arePropsEqual)

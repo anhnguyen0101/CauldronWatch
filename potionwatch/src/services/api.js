@@ -50,21 +50,21 @@ export async function fetchHistory(cauldronId = null, startDate = null, endDate 
         grouped[timeKey] = {
           time: date.toLocaleTimeString(),
           timestamp: date.getTime(), // Store timestamp for filtering
-          levels: [], 
+          levels: [],
           cauldrons: [], // Will store Map to deduplicate by cauldron_id
           cauldronsMap: new Map() // Track latest value per cauldron
         }
       }
       grouped[timeKey].levels.push(point.level)
-      
+
       // Store per-cauldron data for timeline (keep latest value per cauldron per minute)
       // Use capacity from cauldronsMap if available, otherwise from point or default
-      const capacity = cauldronsMap?.get(point.cauldron_id)?.capacity || 
-                       point.capacity || 
-                       point.max_volume || 
-                       1000
+      const capacity = cauldronsMap?.get(point.cauldron_id)?.capacity ||
+        point.capacity ||
+        point.max_volume ||
+        1000
       const percentage = Math.round((point.level / capacity) * 100)
-      
+
       // Keep the latest value for each cauldron (in case of duplicates in same minute)
       const existing = grouped[timeKey].cauldronsMap.get(point.cauldron_id)
       if (!existing || new Date(point.timestamp) > new Date(existing.timestamp)) {
@@ -75,7 +75,7 @@ export async function fetchHistory(cauldronId = null, startDate = null, endDate 
         })
       }
     })
-    
+
     // Convert cauldronsMap to array for each timeKey
     Object.keys(grouped).forEach(timeKey => {
       grouped[timeKey].cauldrons = Array.from(grouped[timeKey].cauldronsMap.values())
@@ -151,19 +151,35 @@ export async function fetchDiscrepancies(severity = null, cauldronId = null) {
 }
 
 // Detect discrepancies (Person 3) - triggers detection and returns results
-export async function detectDiscrepancies(startDate = null, endDate = null) {
+export async function detectDiscrepancies(window = null) {
   try {
     const params = {}
-    if (startDate) params.start_date = startDate
-    if (endDate) params.end_date = endDate
+
+    // window is expected like: { start_time: 'ISO', end_time: 'ISO' }
+    if (window?.start_time) {
+      params.start_date = window.start_time
+    }
+    if (window?.end_time) {
+      params.end_date = window.end_time
+    }
+
+    console.log('📨 POST /api/discrepancies/detect', params)
 
     const response = await api.post('/api/discrepancies/detect', null, { params })
     return response.data
   } catch (error) {
     console.error('Error detecting discrepancies:', error)
-    return { discrepancies: [], total_discrepancies: 0, critical_count: 0, warning_count: 0, info_count: 0 }
+    return {
+      discrepancies: [],
+      total_discrepancies: 0,
+      critical_count: 0,
+      warning_count: 0,
+      info_count: 0,
+    }
   }
 }
+
+
 
 // Health check
 export async function checkBackendHealth() {
@@ -179,15 +195,17 @@ export async function checkBackendHealth() {
 export async function fetchNetwork() {
   try {
     const response = await api.get('/api/network')
-    // Backend returns a NetworkDto with nodes and edges; normalize to frontend-friendly links
-    // Example edge shape from backend: {from: 'cauldron_001', to: 'market_001', cost: '00:45:00', node_id: 'market_001'}
+    // Backend returns a NetworkDto with edges
+    // EdgeDto format: {from_node (alias: "from"), to_node (alias: "to"), travel_time_minutes, weight, distance}
     const network = response.data || {}
     const edges = (network.edges || []).map(e => ({
-      from: e.from || e.node_id || null,
-      to: e.to || e.node_id || null,
-      cost: e.cost || null,
-      distance: e.distance || null,
-      weight: e.weight || null
+      from: e.from_node || e.from || null,
+      from_node: e.from_node || e.from || null, // Support both formats
+      to: e.to_node || e.to || null,
+      to_node: e.to_node || e.to || null, // Support both formats
+      travel_time_minutes: e.travel_time_minutes != null ? e.travel_time_minutes : null,
+      distance: e.distance != null ? e.distance : null,
+      weight: e.weight != null ? e.weight : null
     }))
     return { nodes: network.nodes || [], edges }
   } catch (error) {

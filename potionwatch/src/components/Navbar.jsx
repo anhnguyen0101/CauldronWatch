@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Sun, Moon } from 'lucide-react'
+import logo from '../assets/logo.png'
 
 export default function Navbar(){
   const [theme, setTheme] = useState(() => {
@@ -21,8 +22,12 @@ export default function Navbar(){
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b border-neutral-800 bg-transparent">
       <div className="flex items-center gap-4">
-        <button className="p-2 rounded-lg bg-neutral-800/40 hover:bg-neutral-800/70">☰</button>
-        <h2 className="text-lg font-semibold">Dashboard</h2>
+        <div className="flex items-center gap-3">
+          <img src={logo} alt="FlowGuard AI logo" className="w-[120px] h-[120px] md:w-20.05 md:h-20.05 object-contain rounded-md" />
+          <div>
+            <h2 className="text-lg font-semibold">FlowGuard AI</h2>
+          </div>
+        </div>
       </div>
       <div className="flex items-center gap-4">
         <button
@@ -32,7 +37,7 @@ export default function Navbar(){
         >
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
-        <img src="https://avatars.dicebear.com/api/pixel-art-neutral/cauldron.svg" alt="avatar" className="w-8 h-8 rounded-full" />
+        {/* avatar removed per UI update */}
       </div>
     </header>
   )

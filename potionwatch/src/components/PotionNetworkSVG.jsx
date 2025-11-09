@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useMemo } from 'react'
 import bgDark from '../assets/potion_network_bg_dark.png'
 import bgLight from '../assets/potion_network_bg_light.png'
 
@@ -9,12 +9,29 @@ const statusColor = {
   overfill: '#ef4444'
 }
 
-export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links: propLinks = [] }){
+function PotionNetworkSVG({ 
+  cauldrons: propCauldrons = [], 
+  links: propLinks = [],
+  market: propMarket = null 
+}){
   const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
   const bg = isDark ? bgDark : bgLight
 
   const ref = useRef(null)
   const [dims, setDims] = useState({ width: 800, height: 420 })
+  
+  // Debug: Log if precomputed coordinates are present (only in development)
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const cauldronsWithXY = propCauldrons.filter(c => typeof c.x === 'number' && typeof c.y === 'number').length
+      const marketHasXY = !propMarket || (typeof propMarket.x === 'number' && typeof propMarket.y === 'number')
+      if (cauldronsWithXY === propCauldrons.length && marketHasXY && propCauldrons.length > 0) {
+        console.log('✅ PotionNetworkSVG: All nodes have precomputed x, y coordinates - using fast path')
+      } else {
+        console.warn(`⚠️  PotionNetworkSVG: Using slow path - ${cauldronsWithXY}/${propCauldrons.length} cauldrons have x, y, market: ${marketHasXY}`)
+      }
+    }
+  }, [propCauldrons, propMarket])
 
   useEffect(()=>{
     const el = ref.current
@@ -31,16 +48,100 @@ export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links:
 
   const viewW = 600
   const viewH = 400
+  const margin = 40 // Margin for nodes near edges
 
-  // Use provided cauldrons and links (from backend)
+  // Use provided cauldrons, links, and market (from backend)
   const cauldrons = propCauldrons || []
   const links = propLinks || []
+  const market = propMarket
+
+  // Check if all nodes have precomputed x, y coordinates (FASTEST - skip all calculations!)
+  const allNodesHaveXY = useMemo(() => {
+    const cauldronsHaveXY = cauldrons.every(c => typeof c.x === 'number' && typeof c.y === 'number')
+    const marketHasXY = !market || (typeof market.x === 'number' && typeof market.y === 'number')
+    return cauldrons.length > 0 && cauldronsHaveXY && marketHasXY
+  }, [cauldrons, market])
+
+  // Helper: Get latitude/longitude from node (supports both formats)
+  const getLatLng = (node) => {
+    const lat = node.latitude ?? node.lat
+    const lng = node.longitude ?? node.lng
+    return { lat, lng }
+  }
+
+  // Helper: Convert latitude/longitude to SVG coordinates
+  const latLngToXY = useMemo(() => (lat, lng, bounds) => {
+    if (!bounds || bounds.minLat === bounds.maxLat && bounds.minLng === bounds.maxLng) {
+      // All points are the same or no bounds, center them
+      return { x: viewW / 2, y: viewH / 2 }
+    }
+    
+    // Normalize coordinates to 0-1 range
+    const normalizedX = (lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)
+    const normalizedY = 1 - ((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) // Flip Y axis (lat increases upward in SVG)
+    
+    // Scale to viewBox with margin
+    const x = margin + normalizedX * (viewW - 2 * margin)
+    const y = margin + normalizedY * (viewH - 2 * margin)
+    
+    return { x, y }
+  }, [viewW, viewH, margin])
+
+  // Calculate bounds from all nodes (cauldrons + market) - ONLY if needed (no precomputed coords)
+  const bounds = useMemo(() => {
+    // If all nodes have precomputed x, y, skip bounds calculation entirely!
+    if (allNodesHaveXY) {
+      return null
+    }
+    
+    const allNodes = [...cauldrons]
+    if (market) {
+      const marketCoords = getLatLng(market)
+      if (marketCoords.lat != null && marketCoords.lng != null) {
+        allNodes.push({ latitude: marketCoords.lat, longitude: marketCoords.lng })
+      }
+    }
+    
+    if (allNodes.length === 0) {
+      return null
+    }
+
+    const coords = allNodes.map(n => getLatLng(n)).filter(c => c.lat != null && c.lng != null)
+    
+    if (coords.length === 0) {
+      return null
+    }
+
+    const lats = coords.map(c => c.lat)
+    const lngs = coords.map(c => c.lng)
+
+    // Add padding (10% on each side)
+    const latRange = Math.max(...lats) - Math.min(...lats)
+    const lngRange = Math.max(...lngs) - Math.min(...lngs)
+    const padding = latRange > 0 && lngRange > 0 ? 0.1 : 0.01
+
+    return {
+      minLat: Math.min(...lats) - latRange * padding,
+      maxLat: Math.max(...lats) + latRange * padding,
+      minLng: Math.min(...lngs) - lngRange * padding,
+      maxLng: Math.max(...lngs) + lngRange * padding
+    }
+  }, [allNodesHaveXY, cauldrons, market])
+
+  const hasRealCoords = bounds != null && !allNodesHaveXY && (
+    cauldrons.some(c => {
+      const coords = getLatLng(c)
+      return coords.lat != null && coords.lng != null
+    }) || (market && (() => {
+      const coords = getLatLng(market)
+      return coords.lat != null && coords.lng != null
+    })())
+  )
 
   // px per view-unit (how many pixels correspond to 1 viewBox unit)
   const pxPerViewY = dims.height / viewH
 
   // preferred node radius in pixels (fixed smaller size so 12 cauldrons fit)
-  // user-requested exact radius ≈ 16px
   const preferredRadiusPx = 16
   // convert preferred pixel radius into viewBox units (using vertical scale)
   // shrink nodes when there are many cauldrons
@@ -50,26 +151,111 @@ export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links:
 
   const clamp = (v,min,max) => Math.max(min, Math.min(max, v))
 
-  // Auto-generate circular layout positions for up to many nodes (evenly spaced around center)
+  // Auto-generate circular layout positions (fallback when no real coordinates)
   const centerX = viewW / 2
   const centerY = viewH / 2 - (viewH * 0.04) // slight upward offset
   const layoutMargin = Math.max(32, Math.min(viewW, viewH) * 0.12)
   const layoutRadius = Math.max(60, Math.min((Math.min(viewW, viewH) / 2) - layoutMargin, (viewW / 2) - layoutMargin)) - radius * 2
 
-  const autoPositions = cauldrons.map((c, i) => {
-    const a = -Math.PI / 2 + (i * (2 * Math.PI / count))
-    const x = centerX + layoutRadius * Math.cos(a)
-    const y = centerY + layoutRadius * Math.sin(a)
-    return { x, y, angle: a }
-  })
+  const autoPositions = useMemo(() => {
+    return cauldrons.map((c, i) => {
+      const a = -Math.PI / 2 + (i * (2 * Math.PI / count))
+      const x = centerX + layoutRadius * Math.cos(a)
+      const y = centerY + layoutRadius * Math.sin(a)
+      return { x, y, angle: a }
+    })
+  }, [cauldrons, count, centerX, centerY, layoutRadius])
 
-  // compute position: use auto layout positions so nodes are evenly distributed
-  const pos = (c) => {
-    const idx = cauldrons.findIndex(x => x.id === c.id)
-    if (idx >= 0 && autoPositions[idx]) return autoPositions[idx]
-    // fallback: interpret percentage coords (0-100) to view coords
-    return { x: clamp((Number(c.x || 0) / 100) * viewW, 8, viewW - 8), y: clamp((Number(c.y || 0) / 100) * viewH, 12, viewH - 12) }
+  // Pre-compute all node positions - PRIORITY: Use precomputed x, y coordinates (FASTEST!)
+  const nodePositions = useMemo(() => {
+    const positionMap = new Map()
+
+    // Priority 1: Use precomputed x, y coordinates from backend (normalized 0-1)
+    // These are calculated once on the backend - fastest option!
+    if (allNodesHaveXY) {
+      cauldrons.forEach(node => {
+        if (typeof node.x === 'number' && typeof node.y === 'number') {
+          // Backend provides normalized coordinates (0-1), scale to viewBox
+          // Apply margin to keep nodes away from edges
+          positionMap.set(node.id, {
+            x: margin + node.x * (viewW - 2 * margin),
+            y: margin + node.y * (viewH - 2 * margin)
+          })
+        }
+      })
+      
+      // Market position
+      if (market && typeof market.x === 'number' && typeof market.y === 'number') {
+        positionMap.set(market.id || 'market', {
+          x: margin + market.x * (viewW - 2 * margin),
+          y: margin + market.y * (viewH - 2 * margin)
+        })
+      }
+      
+      return positionMap
+    }
+
+    // Priority 2: Fallback to lat/lng calculation (only if x, y not available)
+    cauldrons.forEach(node => {
+      // Check if this node has precomputed coordinates first
+      if (typeof node.x === 'number' && typeof node.y === 'number') {
+        positionMap.set(node.id, {
+          x: margin + node.x * (viewW - 2 * margin),
+          y: margin + node.y * (viewH - 2 * margin)
+        })
+        return
+      }
+      
+      // Fallback to lat/lng
+      if (hasRealCoords && bounds) {
+        const coords = getLatLng(node)
+        if (coords.lat != null && coords.lng != null) {
+          positionMap.set(node.id, latLngToXY(coords.lat, coords.lng, bounds))
+          return
+        }
+      }
+      
+      // Fallback to circular layout
+      const idx = cauldrons.findIndex(x => x.id === node.id)
+      if (idx >= 0 && autoPositions[idx]) {
+        positionMap.set(node.id, autoPositions[idx])
+      }
+    })
+    
+    // Market position
+    if (market) {
+      if (typeof market.x === 'number' && typeof market.y === 'number') {
+        positionMap.set(market.id || 'market', {
+          x: margin + market.x * (viewW - 2 * margin),
+          y: margin + market.y * (viewH - 2 * margin)
+        })
+      } else if (hasRealCoords && bounds) {
+        const coords = getLatLng(market)
+        if (coords.lat != null && coords.lng != null) {
+          positionMap.set(market.id || 'market', latLngToXY(coords.lat, coords.lng, bounds))
+        } else {
+          positionMap.set(market.id || 'market', { x: centerX, y: centerY })
+        }
+      } else {
+        positionMap.set(market.id || 'market', { x: centerX, y: centerY })
+      }
+    }
+
+    return positionMap
+  }, [allNodesHaveXY, cauldrons, market, viewW, viewH, margin, hasRealCoords, bounds, latLngToXY, autoPositions, centerX, centerY])
+
+  // Optimized pos function - O(1) lookup from precomputed positions
+  const pos = (node) => {
+    return nodePositions.get(node.id) || { x: centerX, y: centerY }
   }
+
+  // Market position - use precomputed position
+  const marketPos = useMemo(() => {
+    if (market) {
+      return nodePositions.get(market.id || 'market') || { x: centerX, y: centerY }
+    }
+    return { x: centerX, y: centerY }
+  }, [market, nodePositions, centerX, centerY])
 
   const pathFor = (a,b) => {
     const pa = pos(a)
@@ -83,9 +269,7 @@ export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links:
     return `M ${pa.x} ${pa.y} Q ${cx} ${cy} ${pb.x} ${pb.y}`
   }
 
-  // path to market (center) — slightly angled
-  const market = { id: 'M', name: 'Enchanted Market' }
-  const marketPos = { x: centerX, y: centerY }
+  // Path to market
   const pathToMarket = (c) => {
     const pa = pos(c)
     const pb = marketPos
@@ -109,6 +293,26 @@ export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links:
     const g = parseInt(h.substring(2,4),16)
     const b = parseInt(h.substring(4,6),16)
     return `rgba(${r},${g},${b},${alpha})`
+  }
+
+  // Helper: format travel time or distance for display on edges
+  const formatEdgeLabel = (link) => {
+    if (link.travel_time_minutes != null) {
+      const mins = Math.round(link.travel_time_minutes)
+      return `${mins}m`
+    }
+    if (link.distance != null) {
+      const dist = link.distance.toFixed(1)
+      return `${dist}km`
+    }
+    return ''
+  }
+
+  // Create node lookup map for efficient edge rendering
+  const nodeById = new Map()
+  cauldrons.forEach(c => nodeById.set(c.id, c))
+  if (market) {
+    nodeById.set(market.id || 'market', market)
   }
 
   return (
@@ -141,17 +345,23 @@ export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links:
   {/* overlay rect to subtly darken the bottom */}
   <rect x="0" y="0" width={viewW} height={viewH} fill="url(#bgOverlay)" />
 
-        {/* glowing potion flow links (thinner, gradient-from-nodes-to-transparent-middle) */}
+        {/* Network edges (from network_edges table) - supports cauldron-to-cauldron and cauldron-to-market */}
         <g strokeLinecap="round" fill="none">
           {links.map((link, i) => {
-            const a = cauldrons.find(c => c.id === link.from)
-            const b = cauldrons.find(c => c.id === link.to)
-            if (!a || !b) return null
-            const pa = pos(a)
-            const pb = pos(b)
-            const d = pathFor(a,b)
+            // Support multiple field name formats: from/to, from_node/to_node
+            const fromId = link.from || link.from_node
+            const toId = link.to || link.to_node
+            const fromNode = nodeById.get(fromId)
+            const toNode = nodeById.get(toId)
+            
+            if (!fromNode || !toNode) return null
+            
+            const pa = pos(fromNode)
+            const pb = pos(toNode)
+            const d = pathFor(fromNode, toNode)
             const dash = 5 * scale
-            const urgent = ['overfill', 'draining'].includes(a.status) || ['overfill', 'draining'].includes(b.status)
+            const urgent = (fromNode.status && ['overfill', 'draining'].includes(fromNode.status)) || 
+                          (toNode.status && ['overfill', 'draining'].includes(toNode.status))
             const bright = urgent ? '#ff9b7a' : '#9ef6ff'
             const midTransparent = 'rgba(160,240,255,0)'
             const baseWidth = 0.9 * scale
@@ -160,7 +370,7 @@ export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links:
             const gid = `linkGrad-${i}`
 
             return (
-              <g key={i}>
+              <g key={`edge-${i}`}>
                 <defs>
                   <linearGradient id={gid} gradientUnits="userSpaceOnUse" x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}>
                     <stop offset="0%" stopColor={bright} stopOpacity={1} />
@@ -178,62 +388,92 @@ export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links:
                   <animate attributeName="stroke-dashoffset" from="0" to={`${-30 * scale}`} dur={urgent ? '2.6s' : '4s'} repeatCount="indefinite" />
                 </path>
 
-                {/* motion path id for spark (invisible) */}
-                <path id={`link-path-${i}`} d={d} fill="none" stroke="transparent" strokeWidth={0} />
+                {/* Edge label (travel time or distance) */}
+                {(link.travel_time_minutes != null || link.distance != null) ? (
+                  <text fontSize={2.2 * scale} fill={isDark ? '#e6f0f6' : '#1e293b'} 
+                        fontWeight="500" opacity={0.9}>
+                    <textPath href={`#edge-path-${i}`} startOffset="50%" textAnchor="middle">
+                      {formatEdgeLabel(link)}
+                    </textPath>
+                  </text>
+                ) : null}
+
+                {/* Invisible path for textPath */}
+                <path id={`edge-path-${i}`} d={d} fill="none" stroke="transparent" strokeWidth={0} />
               </g>
             )
           })}
         </g>
 
-        {/* shipment links: each cauldron -> market */}
-        <g strokeLinecap="round" fill="none">
-          {cauldrons.map((c, i) => {
-            const pa = pos(c)
-            const pb = marketPos
-            const d = pathToMarket(c)
-            const gid = `shipGrad-${i}`
-            const bright = '#ffd36b'
-            const dash = 6 * scale
-            return (
-              <g key={`ship-${c.id}`}>
-                <defs>
-                  <linearGradient id={gid} gradientUnits="userSpaceOnUse" x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}>
-                    <stop offset="0%" stopColor={bright} stopOpacity={0.95} />
-                    <stop offset="60%" stopColor={bright} stopOpacity={0.12} />
-                    <stop offset="100%" stopColor={bright} stopOpacity={0.95} />
-                  </linearGradient>
-                </defs>
+        {/* Shipment links: each cauldron -> market (only show if market exists and not already in network edges) */}
+        {market && (
+          <g strokeLinecap="round" fill="none">
+            {cauldrons.map((c, i) => {
+              // Check if this cauldron-to-market edge already exists in links
+              const marketId = market.id || 'market'
+              const existingEdge = links.find(l => 
+                (l.from === c.id || l.from_node === c.id) && 
+                (l.to === marketId || l.to_node === marketId)
+              )
+              
+              // Skip if edge already rendered in network edges
+              if (existingEdge) return null
+              
+              const pa = pos(c)
+              const pb = marketPos
+              const d = pathToMarket(c)
+              const gid = `shipGrad-${i}`
+              const bright = '#ffd36b'
+              const dash = 6 * scale
+              
+              return (
+                <g key={`ship-${c.id}`}>
+                  <defs>
+                    <linearGradient id={gid} gradientUnits="userSpaceOnUse" x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}>
+                      <stop offset="0%" stopColor={bright} stopOpacity={0.95} />
+                      <stop offset="60%" stopColor={bright} stopOpacity={0.12} />
+                      <stop offset="100%" stopColor={bright} stopOpacity={0.95} />
+                    </linearGradient>
+                  </defs>
 
-                <path id={`ship-path-${i}`} d={d} stroke={`url(#${gid})`} strokeWidth={0.9 * scale} strokeOpacity={0.65} strokeLinecap="round" strokeDasharray={`${dash} ${dash*1.8}`}>
-                  <animate attributeName="stroke-dashoffset" from="0" to={`${-30 * scale}`} dur="3.6s" repeatCount="indefinite" />
-                </path>
+                  <path id={`ship-path-${i}`} d={d} stroke={`url(#${gid})`} strokeWidth={0.9 * scale} strokeOpacity={0.65} strokeLinecap="round" strokeDasharray={`${dash} ${dash*1.8}`}>
+                    <animate attributeName="stroke-dashoffset" from="0" to={`${-30 * scale}`} dur="3.6s" repeatCount="indefinite" />
+                  </path>
 
-                {/* distance/time label along path */}
-                <text fontSize={2.4 * scale} fill={isDark ? '#f8ecd2' : '#6b4a00'}>
-                  <textPath href={`#ship-path-${i}`} startOffset="50%" textAnchor="middle">{c.distance}</textPath>
-                </text>
-              </g>
-            )
-          })}
-        </g>
+                  {/* Note: Distance/time labels are handled by network edges above */}
+                </g>
+              )
+            })}
+          </g>
+        )}
         {/* cauldron nodes */}
         {cauldrons.map((c, idx) => {
           const p = pos(c)
-          const ap = autoPositions[idx] || { angle: 0 }
           const pct = Math.max(0, Math.min(100, Number(c.level) || 0))
           const color = statusColor[c.status] || statusColor.normal
           const fillLen = (pct/100) * circ
           // aura color with alpha 0.25
           const aura = hexToRgba(color, 0.25)
-          // label offset outward from center
-          const dx = p.x - centerX
-          const dy = p.y - centerY
-          const dist = Math.sqrt(dx*dx + dy*dy) || 1
-          const nx = dx / dist
-          const ny = dy / dist
-          const labelOffset = 6 // view units outward
-          const lx = p.x + nx * (radius + labelOffset)
-          const ly = p.y + ny * (radius + labelOffset)
+          
+          // Label positioning: offset outward from node center
+          // For precomputed coordinates or real coordinates, use a simple downward offset
+          // For circular layout, offset radially outward
+          let labelX, labelY
+          if (allNodesHaveXY || hasRealCoords) {
+            // Simple downward offset for real/precomputed coordinates
+            labelX = 0
+            labelY = radius + 14
+          } else {
+            // Radial outward offset for circular layout
+            const dx = p.x - centerX
+            const dy = p.y - centerY
+            const dist = Math.sqrt(dx*dx + dy*dy) || 1
+            const nx = dx / dist
+            const ny = dy / dist
+            const labelOffset = 6 // view units outward
+            labelX = nx * (radius + labelOffset)
+            labelY = ny * (radius + labelOffset)
+          }
 
           return (
             <g key={c.id} transform={`translate(${p.x}, ${p.y})`}>
@@ -261,21 +501,26 @@ export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links:
               <text x={0} y={0.5 * scale} textAnchor="middle" fontSize={3.4 * scale} fontWeight={700} fill={isDark ? '#e6f0f6' : '#06202a'}>{pct}%</text>
 
               {/* name offset outward */}
-              <text x={lx - p.x} y={ly - p.y} textAnchor="middle" fontSize={2.2 * scale} fill={isDark ? '#9ca3af' : '#334155'}>{c.name}</text>
+              <text x={labelX} y={labelY} textAnchor="middle" fontSize={2.2 * scale} fill={isDark ? '#9ca3af' : '#334155'}>{c.name || c.id}</text>
             </g>
           )
         })}
 
-        {/* market node at center */}
-        <g transform={`translate(${marketPos.x}, ${marketPos.y})`}>
-          <circle r={radius * 1.6} fill={hexToRgba('#ffd36b', 0.18)} style={{filter: 'url(#glow)'}} />
-          <circle r={radius * 1.15} fill="#ffd36b" stroke={hexToRgba('#5a3c00',0.12)} strokeWidth={0.6 * scale} />
-          <circle r={radius * 0.75} fill={isDark ? '#1a1200' : '#fff7e6'} />
-          <text x={0} y={radius * 1.8} textAnchor="middle" fontSize={3 * scale} fill={isDark ? '#ffe9b5' : '#6b4a00'}>Enchanted Market</text>
-        </g>
-
-        {/* Enchanted Market removed per request */}
+        {/* Market node */}
+        {market && (
+          <g transform={`translate(${marketPos.x}, ${marketPos.y})`}>
+            <circle r={radius * 1.6} fill={hexToRgba('#ffd36b', 0.18)} style={{filter: 'url(#glow)'}} />
+            <circle r={radius * 1.15} fill="#ffd36b" stroke={hexToRgba('#5a3c00',0.12)} strokeWidth={0.6 * scale} />
+            <circle r={radius * 0.75} fill={isDark ? '#1a1200' : '#fff7e6'} />
+            <text x={0} y={radius * 1.8} textAnchor="middle" fontSize={3 * scale} fill={isDark ? '#ffe9b5' : '#6b4a00'}>
+              {market.name || 'Enchanted Market'}
+            </text>
+          </g>
+        )}
       </svg>
     </div>
   )
 }
+
+// Memoize component to prevent unnecessary re-renders
+export default React.memo(PotionNetworkSVG)

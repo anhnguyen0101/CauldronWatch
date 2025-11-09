@@ -38,9 +38,14 @@ class CachedEOGClient:
         # Fetch from API with fallback to stale cache
         try:
             cauldrons = self.eog_client.get_cauldrons()
-            # Cache the results
+            # Cache the results (always cache fetched data)
+            # This will automatically calculate and store x, y positions
             if use_cache:
                 self.cache.cache_cauldrons(cauldrons)
+                # Return cached version which includes x, y coordinates
+                cached = self.cache.get_cached_cauldrons(max_age_minutes=999999)
+                if cached:
+                    return cached
             return cauldrons
         except Exception as e:
             error_str = str(e)
@@ -264,8 +269,15 @@ class CachedEOGClient:
         market = self.eog_client.get_market()
         
         # Cache the results (always cache fetched data)
+        # This will automatically calculate and store x, y positions
         self.cache.cache_market(market)
         
+        # Return cached version which includes x, y coordinates
+        cached = self.cache.get_cached_market(max_age_minutes=999999)
+        if cached:
+            return cached
+        
+        # Fallback to original if cache retrieval fails
         return market
     
     # ==================== Couriers ====================

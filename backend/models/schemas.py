@@ -109,6 +109,8 @@ class MarketDto(BaseModel):
     longitude: float
     name: Optional[str] = None
     description: Optional[str] = None
+    x: Optional[float] = None  # Normalized X coordinate (0-1) for visualization
+    y: Optional[float] = None  # Normalized Y coordinate (0-1) for visualization
 
     @property
     def market_id(self) -> str:
@@ -155,6 +157,8 @@ class CauldronDto(BaseModel):
     name: Optional[str] = None
     current_level: Optional[float] = None
     fill_rate: Optional[float] = None
+    x: Optional[float] = None  # Normalized X coordinate (0-1) for visualization
+    y: Optional[float] = None  # Normalized Y coordinate (0-1) for visualization
 
     @property
     def cauldron_id(self) -> str:

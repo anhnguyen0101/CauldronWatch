@@ -1,53 +1,110 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { fetchDiscrepancies, detectDiscrepancies } from '../services/api'
 import { AlertTriangle, AlertCircle, Info, RefreshCw } from 'lucide-react'
+import usePotionStore from '../store/usePotionStore'
 
 export default function Discrepancies(){
-  // Store ALL discrepancies (unfiltered) - fetched once
+  // Store discrepancies for current time range
   const [allDiscrepancies, setAllDiscrepancies] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterSeverity, setFilterSeverity] = useState(null)
   const [filterCauldron, setFilterCauldron] = useState(null)
+  const [timeRange, setTimeRange] = useState('7d') // Default: 7 days
   const [lastFetchTime, setLastFetchTime] = useState(null)
 
-  // Fetch all discrepancies once (without filters)
+  // Calculate date range based on selected timeRange
+  const getDateRange = React.useCallback((range) => {
+    const end = new Date()
+    const endDateOnly = end.toISOString().split('T')[0]
+    let start
+    let startDateOnly
+    
+    switch (range) {
+      case '1d':
+        // For "Last 24 Hours", use today's date only (not yesterday)
+        startDateOnly = endDateOnly
+        break
+      case '3d':
+        start = new Date(end.getTime() - 3 * 24 * 60 * 60 * 1000)
+        startDateOnly = start.toISOString().split('T')[0]
+        break
+      case '7d':
+        start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
+        startDateOnly = start.toISOString().split('T')[0]
+        break
+      case '30d':
+        start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
+        startDateOnly = start.toISOString().split('T')[0]
+        break
+      default:
+        start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
+        startDateOnly = start.toISOString().split('T')[0]
+    }
+    
+    console.log(`📅 Date range for ${range}:`, startDateOnly, 'to', endDateOnly)
+    
+    return {
+      startDate: startDateOnly,
+      endDate: endDateOnly
+    }
+  }, [])
+
+  // Fetch discrepancies for selected time range
   useEffect(() => {
     async function loadDiscrepancies() {
       try {
-        setLoading(true)
-        console.log('🔍 Loading discrepancies (cached if already detected)...')
+        const { startDate, endDate } = getDateRange(timeRange)
+        const dateRangeKey = `${startDate}_${endDate}`
         
-        // Fetch discrepancies first (they might be cached from backend)
-        const result = await fetchDiscrepancies(null, null)
-        console.log('📊 Fetched discrepancies:', result.discrepancies?.length || 0, 'items')
+        // Check store cache first (persists across navigation)
+        const store = usePotionStore.getState()
+        const cached = store.getCachedDiscrepancies(dateRangeKey, 5 * 60 * 1000) // 5 min cache
         
-        setAllDiscrepancies(result.discrepancies || [])
-        setLastFetchTime(new Date())
-        setLoading(false)
-        
-        // If no discrepancies found, try detection in background (don't block UI)
-        if (!result.discrepancies || result.discrepancies.length === 0) {
-          console.log('📊 No cached discrepancies, detecting in background...')
-          detectDiscrepancies().then(detectResult => {
-            console.log('✅ Background detection complete:', detectResult)
-            // Fetch again after detection
-            return fetchDiscrepancies(null, null)
-          }).then(refreshedResult => {
-            setAllDiscrepancies(refreshedResult.discrepancies || [])
-            setLastFetchTime(new Date())
-          }).catch(err => {
-            console.error('❌ Background detection error:', err)
-          })
+        if (cached) {
+          console.log(`✅ Using cached discrepancies for ${timeRange} (from store)`)
+          setAllDiscrepancies(cached)
+          setLastFetchTime(new Date())
+          setLoading(false)
+          return
         }
+        
+        setLoading(true)
+        console.log(`🔍 Loading discrepancies for ${timeRange} (${startDate} to ${endDate})...`)
+        
+        // OPTIMIZATION: Always try detection first (backend caches results)
+        const detectResult = await detectDiscrepancies(startDate, endDate)
+        console.log('✅ Detection complete:', detectResult.total_discrepancies || 0, 'discrepancies')
+        
+        const discrepancies = detectResult.discrepancies || []
+        setAllDiscrepancies(discrepancies)
+        setLastFetchTime(new Date())
+        
+        // Cache in store for cross-page navigation
+        store.setCachedDiscrepancies(dateRangeKey, discrepancies)
+        
+        setLoading(false)
       } catch (error) {
         console.error('❌ Error loading discrepancies:', error)
-        setAllDiscrepancies([])
+        // On error, try to fetch cached results as fallback
+        try {
+          const { startDate, endDate } = getDateRange(timeRange)
+          const result = await fetchDiscrepancies(null, null, startDate, endDate)
+          const discrepancies = result.discrepancies || []
+          setAllDiscrepancies(discrepancies)
+          setLastFetchTime(new Date())
+          
+          // Cache in store even on fallback
+          const dateRangeKey = `${startDate}_${endDate}`
+          usePotionStore.getState().setCachedDiscrepancies(dateRangeKey, discrepancies)
+        } catch (fetchError) {
+          setAllDiscrepancies([])
+        }
         setLoading(false)
       }
     }
     
     loadDiscrepancies()
-  }, []) // Only fetch once on mount
+  }, [timeRange, getDateRange]) // Re-fetch when time range changes
 
   // Filter discrepancies client-side (no API call)
   const filteredDiscrepancies = useMemo(() => {
@@ -81,16 +138,22 @@ export default function Discrepancies(){
   const handleRefresh = async () => {
     try {
       setLoading(true)
-      console.log('🔄 Refreshing discrepancies...')
+      const { startDate, endDate } = getDateRange(timeRange)
+      console.log(`🔄 Refreshing discrepancies for ${timeRange}...`)
       
-      const detectResult = await detectDiscrepancies()
+      const detectResult = await detectDiscrepancies(startDate, endDate)
       console.log('✅ Detection complete:', detectResult)
       
-      const result = await fetchDiscrepancies(null, null)
+      const result = await fetchDiscrepancies(null, null, startDate, endDate)
       console.log('📊 Refreshed discrepancies:', result.discrepancies?.length || 0, 'items')
       
-      setAllDiscrepancies(result.discrepancies || [])
+      const discrepancies = result.discrepancies || []
+      setAllDiscrepancies(discrepancies)
       setLastFetchTime(new Date())
+      
+      // Update cache
+      const dateRangeKey = `${startDate}_${endDate}`
+      usePotionStore.getState().setCachedDiscrepancies(dateRangeKey, discrepancies)
     } catch (error) {
       console.error('❌ Error refreshing discrepancies:', error)
     } finally {
@@ -124,13 +187,43 @@ export default function Discrepancies(){
     }
   }
 
-  if (loading) {
-    return (
-      <div className="card">
-        <h3 className="panel-title mb-4">Ticket–Drain Discrepancies</h3>
-        <div className="text-center py-8 text-gray-400">Loading discrepancies...</div>
+  // OPTIMIZATION: Show layout with loading skeletons instead of blocking entire page
+  const LoadingSkeleton = () => (
+    <div className="space-y-6">
+      {/* Summary Cards Skeleton */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="card animate-pulse">
+            <div className="h-4 bg-neutral-700 rounded w-24 mb-2"></div>
+            <div className="h-8 bg-neutral-700 rounded w-16"></div>
+          </div>
+        ))}
       </div>
-    )
+      
+      {/* Filters Skeleton */}
+      <div className="card">
+        <div className="h-6 bg-neutral-700 rounded w-32 mb-4"></div>
+        <div className="flex gap-4">
+          <div className="h-10 bg-neutral-700 rounded w-32"></div>
+          <div className="h-10 bg-neutral-700 rounded w-32"></div>
+          <div className="h-10 bg-neutral-700 rounded flex-1"></div>
+        </div>
+      </div>
+      
+      {/* Table Skeleton */}
+      <div className="card">
+        <div className="h-6 bg-neutral-700 rounded w-48 mb-4"></div>
+        <div className="space-y-2">
+          {[1, 2, 3, 4, 5].map(i => (
+            <div key={i} className="h-12 bg-neutral-700 rounded"></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  if (loading) {
+    return <LoadingSkeleton />
   }
 
   return (
@@ -168,6 +261,21 @@ export default function Discrepancies(){
       <div className="card">
         <div className="flex items-center gap-4 mb-4 flex-wrap">
           <h3 className="panel-title">Filters</h3>
+          
+          {/* Time Range Selector */}
+          <select
+            value={timeRange}
+            onChange={(e) => setTimeRange(e.target.value)}
+            disabled={loading}
+            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm disabled:opacity-50"
+          >
+            <option value="1d">Last 24 Hours</option>
+            <option value="3d">Last 3 Days</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+          </select>
+          
+          {/* Severity Filter */}
           <select
             value={filterSeverity || ''}
             onChange={(e) => setFilterSeverity(e.target.value || null)}
@@ -178,6 +286,8 @@ export default function Discrepancies(){
             <option value="warning">Warning</option>
             <option value="info">Info</option>
           </select>
+          
+          {/* Cauldron Filter */}
           <input
             type="text"
             placeholder="Filter by Cauldron ID..."
@@ -185,6 +295,8 @@ export default function Discrepancies(){
             onChange={(e) => setFilterCauldron(e.target.value || null)}
             className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm flex-1 min-w-[200px]"
           />
+          
+          {/* Refresh Button */}
           <button
             onClick={handleRefresh}
             disabled={loading}
@@ -194,9 +306,10 @@ export default function Discrepancies(){
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
+          
           {lastFetchTime && (
             <span className="text-xs text-gray-400">
-              Last updated: {lastFetchTime.toLocaleTimeString()}
+              Updated: {lastFetchTime.toLocaleTimeString()}
             </span>
           )}
         </div>

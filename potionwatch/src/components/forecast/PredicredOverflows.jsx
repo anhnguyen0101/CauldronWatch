@@ -36,22 +36,22 @@ export default function PredictedOverflows({ loading, error, predictions }) {
     const visible = (predictions || []).slice(0, 12);
 
     return (
-        <div className="bg-[#050608] text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
+        <div className="bg-panel-light dark:bg-[#050608] text-text-light dark:text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
             <div className="flex items-baseline justify-between mb-4">
                 <h3 className="text-2xl font-semibold">Predicted Overflows</h3>
                 {loading && (
-                    <span className="text-xs text-slate-400">Loading…</span>
+                    <span className="text-xs text-neutral-600 dark:text-slate-400">Loading…</span>
                 )}
             </div>
 
             {error && (
-                <p className="text-slate-400 text-sm">
+                <p className="text-neutral-600 dark:text-slate-400 text-sm">
                     Unable to load predictions.
                 </p>
             )}
 
             {!loading && !error && visible.length === 0 && (
-                <p className="text-slate-400 text-sm">
+                <p className="text-neutral-600 dark:text-slate-400 text-sm">
                     No cauldrons available or no valid data.
                 </p>
             )}
@@ -67,12 +67,12 @@ export default function PredictedOverflows({ loading, error, predictions }) {
                         const barClass = barColorForPrediction(p);
                         const icon = getStatusIcon(p.minutesToOverflow);
 
-                        return (
+                            return (
                             <div
                                 key={p.id}
-                                className="flex items-center gap-3 bg-slate-950/40 border border-slate-800/70 rounded-2xl px-3 py-3"
+                                className="flex items-center gap-3 bg-panel-light/80 border border-border-light dark:bg-slate-950/40 dark:border-slate-800/70 rounded-2xl px-3 py-3"
                             >
-                                <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center overflow-hidden">
+                                <div className="w-12 h-12 rounded-full bg-panel-dark dark:bg-slate-900 flex items-center justify-center overflow-hidden">
                                     <img
                                         src={icon.src}
                                         alt={icon.alt}
@@ -86,7 +86,7 @@ export default function PredictedOverflows({ loading, error, predictions }) {
                                             {p.name}
                                         </div>
                                         <div className="flex flex-col items-end">
-                                            <div className="text-[10px] text-slate-500">
+                                            <div className="text-[10px] text-neutral-600 dark:text-slate-500">
                                                 {p.capacity
                                                     ? `${Math.round(p.level)}/${p.capacity} L`
                                                     : "capacity unknown"}
@@ -98,7 +98,7 @@ export default function PredictedOverflows({ loading, error, predictions }) {
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+                                    <div className="w-full h-2 bg-panel-dark rounded-full overflow-hidden">
                                         <div
                                             className={`${barClass} h-2 rounded-full transition-all`}
                                             style={{ width: `${usedFrac * 100}%` }}

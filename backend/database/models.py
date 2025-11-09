@@ -19,6 +19,8 @@ class CauldronCache(Base):
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     max_volume = Column(Float, nullable=False)
+    x = Column(Float, nullable=True)  # Normalized X coordinate (0-1) for visualization
+    y = Column(Float, nullable=True)  # Normalized Y coordinate (0-1) for visualization
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     def __repr__(self):
@@ -69,6 +71,8 @@ class MarketCache(Base):
     description = Column(Text, nullable=True)
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
+    x = Column(Float, nullable=True)  # Normalized X coordinate (0-1) for visualization
+    y = Column(Float, nullable=True)  # Normalized Y coordinate (0-1) for visualization
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     def __repr__(self):
