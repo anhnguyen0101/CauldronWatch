@@ -265,7 +265,6 @@ export default function TimelineHeatmap({ onCellClick } = {}){
         </div>
         
         <div className="flex items-center gap-3 flex-wrap">
-<<<<<<< HEAD
           <AIHelpButton 
             componentName="Timeline Heatmap"
             data={{
@@ -297,7 +296,6 @@ export default function TimelineHeatmap({ onCellClick } = {}){
               <span className="text-xs text-gray-400">Loading...</span>
             )}
             {lastFetchTime && !isLoadingHistory && (
-<<<<<<< HEAD
               <span className="text-xs text-gray-500">
                 ({allHistoryData.length} snapshots cached)
               </span>
@@ -347,13 +345,28 @@ export default function TimelineHeatmap({ onCellClick } = {}){
                     const discrepancy = m?.discrepancy ?? 0
                     const alertCount = m?.alertCount ?? 0
                     const isLatestCol = colIndex === (columns.length - 1)
-          </button>
-          
-          {/* Live Updates Toggle - Distinct styling */}
-          <button
-            aria-label={isLive ? 'Pause live updates' : 'Resume live updates'}
-            onClick={() => setIsLive(v => !v)}
-            className={`px-3 py-1.5 text-sm rounded-md border flex items-center gap-2 transition-colors ${
+
+                      return (
+                        <td key={c.id} className={`${rowIndex % 2 === 0 ? 'bg-panel-light/0 dark:bg-panel-dark/0' : 'bg-panel-light/5 dark:bg-panel-dark/5'} rounded-md p-1`}>
+                          <div
+                            onMouseEnter={(e) => {
+                              const r = e.currentTarget.getBoundingClientRect()
+                              setHoveredCauldron(c.id)
+                              setHoveredCell({
+                                colIndex,
+                                cauldronId: c.id,
+                                rect: r,
+                                metrics: m,
+                                column
+                              })
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredCauldron(null)
+                              setHoveredCell(null)
+                            }}
+                            onClick={() => handleCellClick(colIndex, c.id)}
+                            role="button"
+                            className={`flex flex-col items-center justify-center text-text-light dark:text-text-dark text-xs w-16 h-16 rounded-md border ${colorClass} ${
               isLive 
                 ? 'bg-panel-light dark:bg-neutral-800/60 border-accent/50 dark:border-accent/30 hover:bg-gray-100 dark:hover:bg-neutral-800/80 text-text-light dark:text-gray-200 ring-1 ring-accent/20 dark:ring-accent/10' 
                 : 'bg-panel-light dark:bg-neutral-800/40 border-border-light dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-800/60 text-text-light/70 dark:text-gray-400'
@@ -516,26 +529,24 @@ export default function TimelineHeatmap({ onCellClick } = {}){
                                 {alertCount}
                               </motion.div>
                             )}
+                            {discrepancy > 0 && (<div className="absolute inset-0 rounded-md ring-2 ring-red-500/60 pointer-events-none" />)}
                           </div>
->>>>>>> origin/main
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        <div className="absolute left-0 top-0 h-full w-6 pointer-events-none bg-gradient-to-r from-panel-light to-transparent dark:from-panel-dark/90" />
-        <div className="absolute right-0 top-0 h-full w-6 pointer-events-none bg-gradient-to-l from-panel-light to-transparent dark:from-panel-dark/90" />
+        )}
       </div>
 
       {hoveredCell && hoveredCell.metrics && hoveredCell.rect && createPortal((() => {
         const r = hoveredCell.rect
         const left = Math.min(window.innerWidth - 260, r.right + 8)
         const top = Math.max(8, r.top - 8)
+        const isLiveCol = hoveredCell.colIndex === (columns.length - 1)
         return (
           <div
             style={{ position: 'fixed', left, top, zIndex: 60 }}
@@ -558,7 +569,7 @@ export default function TimelineHeatmap({ onCellClick } = {}){
             <div className="text-xs">Predicted overflow: {hoveredCell.day?.forecast?.find(f=>f.id===hoveredCell.cauldronId)?.predictedOverflow ? 'Yes' : 'No'}</div>
           </div>
         )
-      })(), document.body)}
+      })(), document.body))}
     </div>
   )
 }

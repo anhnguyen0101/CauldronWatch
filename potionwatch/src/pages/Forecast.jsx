@@ -152,7 +152,6 @@ export default function Forecast() {
     };
 
     load();
-<<<<<<< HEAD
   }, [mode, updateForecastData]);
 
   // Update forecast when cauldron levels change (real-time updates)

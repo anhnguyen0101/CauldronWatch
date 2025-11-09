@@ -348,12 +348,6 @@ export default function Discrepancies(){
               </span>
             )}
           </div>
-=======
-          <h3 className="panel-title">Discrepancies</h3>
-          <span className="text-sm text-gray-600 dark:text-gray-400">
-            Showing {filteredDiscrepancies.length} of {allDiscrepancies.length}
-          </span>
->>>>>>> origin/main
         </div>
         {filteredDiscrepancies.length === 0 ? (
           <div className="text-center py-8 text-gray-400">
