@@ -302,9 +302,6 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="text-sm font-semibold text-text-light dark:text-gray-400">Time Line Series Heat Map</div>
-          {isLive && (
-            <span className="text-xs text-accent font-medium">● LIVE</span>
-          )}
         </div>
         
         <div className="flex items-center gap-3 flex-wrap">
@@ -390,9 +387,6 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                 >
                   <div className="sticky top-0 bg-transparent z-10 text-xs text-center text-text-light/70 dark:text-text-dark/70 mb-2 flex flex-col items-center">
                     <span>{column.time}</span>
-                    {isLiveCol && (
-                      <span className="text-[10px] text-accent mt-0.5 font-semibold">● LIVE</span>
-                    )}
                   </div>
 
                   <div className="grid gap-2" style={{ gridTemplateRows: `repeat(${cauldrons.length}, minmax(0, 1fr))` }}>
@@ -440,7 +434,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                               hoveredCauldron === c.id ? 'scale-105 ring-2 ring-accent/50' : ''
                             } cursor-pointer relative transition-all`}
                             style={{ boxShadow: `0 0 10px 3px ${glowColor}`, WebkitBoxShadow: `0 0 10px 3px ${glowColor}` }}
-                            title={`${c.name}\n${fill}% — ${drain}L${isLiveCol ? ' (LIVE)' : ''}`}
+                            title={`${c.name}\n${fill}% — ${drain}L`}
                           >
                             <div className="text-[10px] font-medium">{c.name}</div>
                             <div className="text-sm font-semibold mt-1">{Math.round(fill)}%</div>
@@ -492,9 +486,6 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
           >
             <div className="font-semibold flex items-center justify-between">
               <span>{hoveredCell.metrics.name ?? hoveredCell.cauldronId}</span>
-              {isLiveCol && (
-                <span className="text-xs text-accent font-bold">● LIVE</span>
-              )}
             </div>
             <div className="text-xs text-neutral-300">Time: {hoveredCell.column?.time}</div>
             <div className="mt-1 text-sm">
