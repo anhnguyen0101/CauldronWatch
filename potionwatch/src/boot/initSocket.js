@@ -21,18 +21,17 @@ export function initSocket(){
       
       if (updateCauldronLevels) {
         // Batch update all levels at once
-        // Backend sends level in LITERS and max_volume/capacity
-        // Convert to percentage for display
+        // websocket.js already converts liters to percentages, so u.level is already a percentage!
         const updates = msg.data.map(u => {
-          const levelLiters = u.level || 0
-          const capacity = u.max_volume || u.capacity || 1000
-          const percentage = Math.round((levelLiters / capacity) * 100)
+          // websocket.js already sets id from cauldron_id || id, and level is already a percentage
+          const cauldronId = u.id
+          const percentage = u.level || 0 // Already converted to percentage by websocket.js
           
           if (process.env.NODE_ENV === 'development' && percentage > 90) {
-            console.log(`📊 High level WS update: ${u.id} = ${levelLiters}L / ${capacity}L = ${percentage}%`)
+            console.log(`📊 High level WS update: ${cauldronId} = ${percentage}% (already converted)`)
           }
           
-          return { id: u.id, level: percentage }
+          return { id: cauldronId, level: percentage }
         })
         console.log('📨 initSocket: Updating store with', updates.length, 'cauldron updates')
         updateCauldronLevels(updates)
@@ -53,62 +52,68 @@ export function initSocket(){
         const updatedStore = usePotionStore.getState()
         console.log(`✅ Batch updated ${msg.data.length} cauldron levels. Store now has ${updatedStore.cauldrons.length} cauldrons`)
         console.log('📊 Sample cauldron levels:', updatedStore.cauldrons.slice(0, 3).map(c => `${c.id}: ${c.level}%`))
+        
+        // Alert rules: check for various conditions using CONVERTED percentages
+        // Get cauldron names from store for better alert messages
+        const currentStore = usePotionStore.getState()
+        const cauldronMap = new Map(currentStore.cauldrons.map(c => [c.id, c]))
+        const removeAlert = currentStore.removeAlert
+        
+        // Use the converted updates array (with percentages) for alert checking
+        updates.forEach(update => {
+          const cauldronId = update.id
+          const percentage = update.level // This is already converted to percentage
+          const cauldron = cauldronMap.get(cauldronId)
+          const cauldronName = cauldron?.name || cauldronId
+          
+          // Overfill alert: level > 95%
+          if(percentage > 95){
+            // Use a stable ID based on cauldron ID to prevent duplicates
+            const alertId = `overfill_${cauldronId}`
+            console.log(`🚨 Creating/updating overfill alert for ${cauldronName}: ${percentage}%`)
+            addAlert({ 
+              id: alertId,
+              title: `⚠️ Overfill Alert: ${cauldronName}`, 
+              message: `${cauldronName} is above 95% (${percentage}%)`,
+              severity: 'critical',
+              timestamp: new Date().toISOString(),
+              time: new Date().toLocaleTimeString()
+            })
+            // Remove underfill alert if it exists (cauldron recovered)
+            removeAlert(`underfill_${cauldronId}`)
+          }
+          // Underfill alert: level < 20%
+          else if(percentage < 20){
+            // Use a stable ID based on cauldron ID to prevent duplicates
+            const alertId = `underfill_${cauldronId}`
+            console.log(`⚠️ Creating/updating underfill alert for ${cauldronName}: ${percentage}%`)
+            addAlert({ 
+              id: alertId,
+              title: `⚠️ Underfill Alert: ${cauldronName}`, 
+              message: `${cauldronName} is below 20% (${percentage}%)`,
+              severity: 'warning',
+              timestamp: new Date().toISOString(),
+              time: new Date().toLocaleTimeString()
+            })
+            // Remove overfill alert if it exists (cauldron drained)
+            removeAlert(`overfill_${cauldronId}`)
+          }
+          // Normal level: remove any existing alerts for this cauldron
+          // (removeAlert will check if alert exists internally)
+          else {
+            removeAlert(`overfill_${cauldronId}`)
+            removeAlert(`underfill_${cauldronId}`)
+          }
+        })
       } else {
         console.warn('⚠️ initSocket: updateCauldronLevels not available, using fallback')
-        // Fallback to individual updates
-        msg.data.forEach(u => setCauldronLevel(u.id, u.level))
+        // Fallback to individual updates - level is already a percentage from websocket.js
+        msg.data.forEach(u => {
+          const cauldronId = u.id
+          const percentage = u.level || 0 // Already converted to percentage by websocket.js
+          setCauldronLevel(cauldronId, percentage)
+        })
       }
-
-      // Alert rules: check for various conditions
-      // Get cauldron names from store for better alert messages
-      const currentStore = usePotionStore.getState()
-      const cauldronMap = new Map(currentStore.cauldrons.map(c => [c.id, c]))
-      const removeAlert = currentStore.removeAlert
-      
-      msg.data.forEach(u=>{
-        // Look up cauldron name from store
-        const cauldron = cauldronMap.get(u.id)
-        const cauldronName = cauldron?.name || u.id
-        
-        // Overfill alert: level > 95%
-        if(u.level > 95){
-          // Use a stable ID based on cauldron ID to prevent duplicates
-          const alertId = `overfill_${u.id}`
-          console.log(`🚨 Creating/updating overfill alert for ${cauldronName}: ${u.level}%`)
-          addAlert({ 
-            id: alertId,
-            title: `⚠️ Overfill Alert: ${cauldronName}`, 
-            message: `${cauldronName} is above 95% (${u.level}%)`,
-            severity: 'critical',
-            timestamp: new Date().toISOString(),
-            time: new Date().toLocaleTimeString()
-          })
-          // Remove underfill alert if it exists (cauldron recovered)
-          removeAlert(`underfill_${u.id}`)
-        }
-        // Underfill alert: level < 20%
-        else if(u.level < 20){
-          // Use a stable ID based on cauldron ID to prevent duplicates
-          const alertId = `underfill_${u.id}`
-          console.log(`⚠️ Creating/updating underfill alert for ${cauldronName}: ${u.level}%`)
-          addAlert({ 
-            id: alertId,
-            title: `⚠️ Underfill Alert: ${cauldronName}`, 
-            message: `${cauldronName} is below 20% (${u.level}%)`,
-            severity: 'warning',
-            timestamp: new Date().toISOString(),
-            time: new Date().toLocaleTimeString()
-          })
-          // Remove overfill alert if it exists (cauldron drained)
-          removeAlert(`overfill_${u.id}`)
-        }
-        // Normal level: remove any existing alerts for this cauldron
-        // (removeAlert will check if alert exists internally)
-        else {
-          removeAlert(`overfill_${u.id}`)
-          removeAlert(`underfill_${u.id}`)
-        }
-      })
     } else if(msg.type === 'drain_event'){
       // Handle drain event from WebSocket
       console.log('💧 Drain event received:', msg.data)
