@@ -12,6 +12,9 @@ const usePotionStore = create((set, get) => ({
   lastUpdate: Date.now(),
   // Queue for updates that arrive before cauldrons are loaded
   pendingUpdates: [],
+  // Cached data for cross-page navigation (persists across route changes)
+  cachedDiscrepancies: {}, // { "dateRange": { data: [...], timestamp: Date } }
+  cachedForecast: null, // { minWitches: {...}, schedule: {...}, timestamp: Date }
 
   setCauldronLevel: (id, level) => {
     set(state => {
@@ -142,7 +145,7 @@ const usePotionStore = create((set, get) => ({
       })
     }
     set(state => {
-      // ✅ Deduplicate by timestamp to prevent duplicates
+      // ✅ Deduplicate by timestamp to prevent duplicates (from main branch - better logic)
       const existingIndex = state.history.findIndex(h => 
         h.timestamp === snapshot.timestamp || 
         (h.time === snapshot.time && Math.abs((h.timestamp || 0) - (snapshot.timestamp || 0)) < 60000)
@@ -168,6 +171,49 @@ const usePotionStore = create((set, get) => ({
       }
       return { history: newHistory }
     })
+  },
+
+  // Cache discrepancies by date range (persists across navigation)
+  setCachedDiscrepancies: (dateRange, discrepancies) => {
+    set(state => ({
+      cachedDiscrepancies: {
+        ...state.cachedDiscrepancies,
+        [dateRange]: {
+          data: discrepancies,
+          timestamp: Date.now()
+        }
+      }
+    }))
+  },
+
+  getCachedDiscrepancies: (dateRange, maxAgeMs = 5 * 60 * 1000) => { // 5 min default
+    const state = get()
+    const cached = state.cachedDiscrepancies[dateRange]
+    if (cached && (Date.now() - cached.timestamp) < maxAgeMs) {
+      return cached.data
+    }
+    return null
+  },
+
+  // Cache forecast data (persists across navigation)
+  setCachedForecast: (forecastData) => {
+    set(state => ({
+      cachedForecast: {
+        ...forecastData,
+        timestamp: Date.now()
+      }
+    }))
+  },
+
+  getCachedForecast: (maxAgeMs = 3 * 60 * 1000) => { // 3 min default
+    const state = get()
+    if (state.cachedForecast && (Date.now() - state.cachedForecast.timestamp) < maxAgeMs) {
+      return {
+        minWitches: state.cachedForecast.minWitches,
+        schedule: state.cachedForecast.schedule
+      }
+    }
+    return null
   }
 }))
 

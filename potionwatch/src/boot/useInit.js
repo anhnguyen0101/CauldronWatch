@@ -5,7 +5,9 @@ import usePotionStore from '../store/usePotionStore'
 
 export default function useInit(){
   useEffect(()=>{
-    // Check backend health first
+    console.log('🚀 Initializing application...')
+    
+    // Check backend health first (non-blocking)
     checkBackendHealth().then(isHealthy => {
       if (!isHealthy) {
         console.error('❌ Backend is not available. Please start the backend server.')
@@ -19,38 +21,30 @@ export default function useInit(){
       return
     })
 
-    // Load initial cauldrons
+    // Load initial cauldrons immediately
     fetchCauldrons().then(cauldrons => {
       console.log('📦 Fetched cauldrons from backend:', cauldrons.length)
       // Transform backend format to frontend format
-      // Backend returns: {id, latitude, longitude, max_volume, name, x, y}
-      // x, y are precomputed normalized coordinates (0-1) from backend
+      // Backend returns: {id, latitude, longitude, max_volume, name, x, y (optional)}
       const transformed = cauldrons.map(c => {
         const cauldronId = c.cauldron_id || c.id
-        return {
+        const result = {
           id: cauldronId,
           name: c.name || cauldronId,
-          // Precomputed x, y coordinates from backend (normalized 0-1)
-          x: c.x,
-          y: c.y,
-          // Support both lat/lng and latitude/longitude formats
-          lat: c.latitude ?? c.lat,
-          lng: c.longitude ?? c.lng,
-          latitude: c.latitude ?? c.lat,
-          longitude: c.longitude ?? c.lng,
+          lat: c.latitude,
+          lng: c.longitude,
+          latitude: c.latitude,  // Add both formats for compatibility
+          longitude: c.longitude,
           level: 0, // Will be updated by latest levels
-          capacity: c.capacity || c.max_volume || 1000,
-          status: c.status || 'normal' // Include status if available
+          capacity: c.capacity || c.max_volume || 1000
         }
+        // Include x, y if provided by backend (precomputed coordinates)
+        if (typeof c.x === 'number') result.x = c.x
+        if (typeof c.y === 'number') result.y = c.y
+        return result
       })
       
-      console.log('✅ Transformed cauldrons:', transformed.length)
-      // Debug: Check if x, y coordinates are present
-      const withXY = transformed.filter(c => typeof c.x === 'number' && typeof c.y === 'number').length
-      console.log(`📐 Cauldrons with precomputed x, y coordinates: ${withXY}/${transformed.length}`)
-      if (withXY < transformed.length) {
-        console.warn('⚠️  Some cauldrons missing x, y coordinates - network visualization will be slower')
-      }
+      console.log('✅ Transformed cauldrons:', transformed.length, transformed[0])
       
       // Get current store state to check for pending updates
       const currentStore = usePotionStore.getState()
@@ -67,37 +61,7 @@ export default function useInit(){
         }
       }
       
-      // ✅ FIX: Load market and network IMMEDIATELY after cauldrons (don't wait for levels)
-      // Market and network are static/semi-static and needed for graph visualization
-      Promise.all([fetchNetwork(), fetchMarket()]).then(([networkData, marketData]) => {
-        if (networkData && Array.isArray(networkData.edges)) {
-          usePotionStore.getState().setLinks(networkData.edges)
-          console.log(`🌐 Loaded ${networkData.edges.length} network edges`)
-        }
-        if (marketData) {
-          // Ensure market has x, y coordinates if available
-          const marketWithXY = {
-            ...marketData,
-            x: marketData.x,
-            y: marketData.y,
-            latitude: marketData.latitude ?? marketData.lat,
-            longitude: marketData.longitude ?? marketData.lng,
-            lat: marketData.latitude ?? marketData.lat,
-            lng: marketData.longitude ?? marketData.lng
-          }
-          usePotionStore.getState().setMarket(marketWithXY)
-          console.log('🏪 Loaded market data:', marketData.name || marketData.id)
-          if (typeof marketData.x === 'number' && typeof marketData.y === 'number') {
-            console.log('✅ Market has precomputed x, y coordinates')
-          } else {
-            console.warn('⚠️  Market missing x, y coordinates - network visualization will be slower')
-          }
-        }
-      }).catch(e => {
-        console.warn('Unable to load network/market at boot:', e)
-      })
-      
-      // Load latest levels (in parallel with market/network)
+      // Load latest levels
       return fetchLatestLevels()
   }).then(async levels => {
         if (!levels) {
@@ -191,9 +155,25 @@ export default function useInit(){
             console.log(`📊 Average level: ${avgLevel}%`)
             console.log(`📊 All cauldron levels:`, store.cauldrons.map(c => `${c.id}: ${c.level || 0}%`))
           }
+          
+          // Load network and market data in parallel (non-critical, don't block)
+          // Don't await these - let them load in background
+          Promise.all([fetchNetwork(), fetchMarket()])
+            .then(([networkData, marketData]) => {
+              if (networkData && Array.isArray(networkData.edges)) {
+                usePotionStore.getState().setLinks(networkData.edges)
+                console.log(`🌐 Loaded ${networkData.edges.length} network edges`)
+              }
+              if (marketData) {
+                usePotionStore.getState().setMarket(marketData)
+                console.log('🏪 Loaded market data:', marketData)
+              }
+            })
+            .catch(e => console.warn('Unable to load network/market at boot:', e))
 
-          // This ensures history snapshots can reference the loaded cauldrons
-          return fetchHistory()
+          // Skip initial history load - TimelineHeatmap will load it when needed
+          console.log('✅ Core data loaded. Timeline and other components will load their data lazily.')
+          return Promise.resolve([])
         } else {
           console.warn('⚠️  No levels data received from backend (empty array)')
           return Promise.resolve([])

@@ -1,193 +1,166 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { fetchDiscrepancies, detectDiscrepancies } from '../services/api'
 import { AlertTriangle, AlertCircle, Info, RefreshCw } from 'lucide-react'
+import { AIHelpButton } from '../components/AIExplanation'
+import usePotionStore from '../store/usePotionStore'
 
-export default function Discrepancies() {
+export default function Discrepancies(){
+  // Store discrepancies for current time range
   const [allDiscrepancies, setAllDiscrepancies] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterSeverity, setFilterSeverity] = useState(null)
   const [filterCauldron, setFilterCauldron] = useState(null)
+  const [timeRange, setTimeRange] = useState('7d') // Default: 7 days
   const [lastFetchTime, setLastFetchTime] = useState(null)
-  const [timeRange, setTimeRange] = useState('all') // 'all' | '1d' | '7d'
-  const [detecting, setDetecting] = useState(false)
 
-  const getWindowForRange = (range) => {
+  // Calculate date range based on selected timeRange
+  const getDateRange = React.useCallback((range) => {
     const end = new Date()
+    const endDateOnly = end.toISOString().split('T')[0]
     let start
-
+    let startDateOnly
+    
     switch (range) {
       case '1d':
-        start = new Date(end.getTime() - 1 * 24 * 60 * 60 * 1000)
+        // For "Last 24 Hours", use today's date only (not yesterday)
+        startDateOnly = endDateOnly
+        break
+      case '3d':
+        start = new Date(end.getTime() - 3 * 24 * 60 * 60 * 1000)
+        startDateOnly = start.toISOString().split('T')[0]
         break
       case '7d':
         start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
+        startDateOnly = start.toISOString().split('T')[0]
+        break
+      case '30d':
+        start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
+        startDateOnly = start.toISOString().split('T')[0]
         break
       default:
         start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
-        break
+        startDateOnly = start.toISOString().split('T')[0]
     }
-
+    
+    console.log(`📅 Date range for ${range}:`, startDateOnly, 'to', endDateOnly)
+    
     return {
-      start_time: start.toISOString(),
-      end_time: end.toISOString(),
-    }
-  }
-
-  // FAST initial load + background detection to keep behavior aligned
-  useEffect(() => {
-    const controller = new AbortController()
-    let cancelled = false
-
-    async function loadInitial() {
-      try {
-        setLoading(true)
-        console.log('🔍 Initial load: fetch existing discrepancies')
-
-        // 1) Fast fetch: show whatever exists
-        const initial = await fetchDiscrepancies(null, null, {
-          signal: controller.signal,
-        })
-
-        if (cancelled) return
-
-        setAllDiscrepancies(initial.discrepancies || [])
-        setLastFetchTime(new Date())
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          console.log('⏹️ Initial fetch aborted')
-        } else {
-          console.error('❌ Error loading discrepancies:', error)
-          if (!cancelled) setAllDiscrepancies([])
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-
-      // 2) Background: run detection + refetch (same as old behavior)
-      try {
-        setDetecting(true)
-        console.log('🧪 Running background detection for fresh data')
-
-        const end = new Date()
-        const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
-        const fullWindow = {
-          start_time: start.toISOString(),
-          end_time: end.toISOString(),
-        }
-
-        await detectDiscrepancies(fullWindow)
-
-        if (cancelled) return
-
-        const afterDetect = await fetchDiscrepancies(null, null, {
-          signal: controller.signal,
-        })
-
-        if (cancelled) return
-
-        console.log(
-          '📊 Updated after detection:',
-          afterDetect.discrepancies?.length || 0,
-          'items'
-        )
-        setAllDiscrepancies(afterDetect.discrepancies || [])
-        setLastFetchTime(new Date())
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          console.log('⏹️ Background detection aborted')
-        } else {
-          console.error('❌ Background detection failed:', error)
-        }
-      } finally {
-        if (!cancelled) setDetecting(false)
-      }
-    }
-
-    loadInitial()
-
-    return () => {
-      cancelled = true
-      controller.abort()
+      startDate: startDateOnly,
+      endDate: endDateOnly
     }
   }, [])
 
-  // Manual refresh: keep strict order so data = detection results
-  const handleRefresh = async () => {
-    try {
-      setLoading(true)
-      setDetecting(true)
-      console.log('🔄 Manual refresh: detect -> fetch')
-
-      const end = new Date()
-      const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
-      const fullWindow = {
-        start_time: start.toISOString(),
-        end_time: end.toISOString(),
+  // Fetch discrepancies for selected time range
+  useEffect(() => {
+    async function loadDiscrepancies() {
+      try {
+        const { startDate, endDate } = getDateRange(timeRange)
+        const dateRangeKey = `${startDate}_${endDate}`
+        
+        // Check store cache first (persists across navigation)
+        const store = usePotionStore.getState()
+        const cached = store.getCachedDiscrepancies(dateRangeKey, 5 * 60 * 1000) // 5 min cache
+        
+        if (cached) {
+          console.log(`✅ Using cached discrepancies for ${timeRange} (from store)`)
+          setAllDiscrepancies(cached)
+          setLastFetchTime(new Date())
+          setLoading(false)
+          return
+        }
+        
+        setLoading(true)
+        console.log(`🔍 Loading discrepancies for ${timeRange} (${startDate} to ${endDate})...`)
+        
+        // OPTIMIZATION: Always try detection first (backend caches results)
+        const detectResult = await detectDiscrepancies(startDate, endDate)
+        console.log('✅ Detection complete:', detectResult.total_discrepancies || 0, 'discrepancies')
+        
+        const discrepancies = detectResult.discrepancies || []
+        setAllDiscrepancies(discrepancies)
+        setLastFetchTime(new Date())
+        
+        // Cache in store for cross-page navigation
+        store.setCachedDiscrepancies(dateRangeKey, discrepancies)
+        
+        setLoading(false)
+      } catch (error) {
+        console.error('❌ Error loading discrepancies:', error)
+        // On error, try to fetch cached results as fallback
+        try {
+          const { startDate, endDate } = getDateRange(timeRange)
+          const result = await fetchDiscrepancies(null, null, startDate, endDate)
+          const discrepancies = result.discrepancies || []
+          setAllDiscrepancies(discrepancies)
+          setLastFetchTime(new Date())
+          
+          // Cache in store even on fallback
+          const dateRangeKey = `${startDate}_${endDate}`
+          usePotionStore.getState().setCachedDiscrepancies(dateRangeKey, discrepancies)
+        } catch (fetchError) {
+          setAllDiscrepancies([])
+        }
+        setLoading(false)
       }
-
-      await detectDiscrepancies(fullWindow)
-
-      const result = await fetchDiscrepancies(null, null)
-      console.log(
-        '📊 Refreshed discrepancies:',
-        result.discrepancies?.length || 0,
-        'items'
-      )
-
-      setAllDiscrepancies(result.discrepancies || [])
-      setLastFetchTime(new Date())
-    } catch (error) {
-      console.error('❌ Error refreshing discrepancies:', error)
-    } finally {
-      setDetecting(false)
-      setLoading(false)
     }
-  }
+    
+    loadDiscrepancies()
+  }, [timeRange, getDateRange]) // Re-fetch when time range changes
 
+  // Filter discrepancies client-side (no API call)
   const filteredDiscrepancies = useMemo(() => {
-    if (!allDiscrepancies || allDiscrepancies.length === 0) return []
-
     let filtered = [...allDiscrepancies]
-
-    if (timeRange !== 'all') {
-      const { start_time, end_time } = getWindowForRange(timeRange)
-      const startDate = new Date(start_time)
-      const endDate = new Date(end_time)
-
-      filtered = filtered.filter((d) => {
-        if (!d.date) return false
-        const rowDate = new Date(d.date)
-        return rowDate >= startDate && rowDate <= endDate
-      })
-    }
-
+    
     if (filterSeverity) {
-      filtered = filtered.filter((d) => d.severity === filterSeverity)
+      filtered = filtered.filter(d => d.severity === filterSeverity)
     }
-
+    
     if (filterCauldron) {
       const searchTerm = filterCauldron.toLowerCase()
-      filtered = filtered.filter((d) =>
+      filtered = filtered.filter(d => 
         d.cauldron_id?.toLowerCase().includes(searchTerm)
       )
     }
-
+    
     return filtered
-  }, [allDiscrepancies, timeRange, filterSeverity, filterCauldron])
+  }, [allDiscrepancies, filterSeverity, filterCauldron])
 
+  // Calculate summary from filtered results
   const summary = useMemo(() => {
     const total = filteredDiscrepancies.length
-    const critical = filteredDiscrepancies.filter(
-      (d) => d.severity === 'critical'
-    ).length
-    const warning = filteredDiscrepancies.filter(
-      (d) => d.severity === 'warning'
-    ).length
-    const info = filteredDiscrepancies.filter(
-      (d) => d.severity === 'info'
-    ).length
+    const critical = filteredDiscrepancies.filter(d => d.severity === 'critical').length
+    const warning = filteredDiscrepancies.filter(d => d.severity === 'warning').length
+    const info = filteredDiscrepancies.filter(d => d.severity === 'info').length
+    
     return { total, critical, warning, info }
   }, [filteredDiscrepancies])
+
+  // Manual refresh function
+  const handleRefresh = async () => {
+    try {
+      setLoading(true)
+      const { startDate, endDate } = getDateRange(timeRange)
+      console.log(`🔄 Refreshing discrepancies for ${timeRange}...`)
+      
+      const detectResult = await detectDiscrepancies(startDate, endDate)
+      console.log('✅ Detection complete:', detectResult)
+      
+      const result = await fetchDiscrepancies(null, null, startDate, endDate)
+      console.log('📊 Refreshed discrepancies:', result.discrepancies?.length || 0, 'items')
+      
+      const discrepancies = result.discrepancies || []
+      setAllDiscrepancies(discrepancies)
+      setLastFetchTime(new Date())
+      
+      // Update cache
+      const dateRangeKey = `${startDate}_${endDate}`
+      usePotionStore.getState().setCachedDiscrepancies(dateRangeKey, discrepancies)
+    } catch (error) {
+      console.error('❌ Error refreshing discrepancies:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const getSeverityIcon = (severity) => {
     switch (severity) {
@@ -215,20 +188,48 @@ export default function Discrepancies() {
     }
   }
 
-  if (loading && allDiscrepancies.length === 0) {
-    return (
+  // OPTIMIZATION: Show layout with loading skeletons instead of blocking entire page
+  const LoadingSkeleton = () => (
+    <div className="space-y-6">
+      {/* Summary Cards Skeleton */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="card animate-pulse">
+            <div className="h-4 bg-neutral-700 rounded w-24 mb-2"></div>
+            <div className="h-8 bg-neutral-700 rounded w-16"></div>
+          </div>
+        ))}
+      </div>
+      
+      {/* Filters Skeleton */}
       <div className="card">
-        <h3 className="panel-title mb-4">Ticket–Drain Discrepancies</h3>
-        <div className="text-center py-8 text-gray-400">
-          Loading discrepancies...
+        <div className="h-6 bg-neutral-700 rounded w-32 mb-4"></div>
+        <div className="flex gap-4">
+          <div className="h-10 bg-neutral-700 rounded w-32"></div>
+          <div className="h-10 bg-neutral-700 rounded w-32"></div>
+          <div className="h-10 bg-neutral-700 rounded flex-1"></div>
         </div>
       </div>
-    )
+      
+      {/* Table Skeleton */}
+      <div className="card">
+        <div className="h-6 bg-neutral-700 rounded w-48 mb-4"></div>
+        <div className="space-y-2">
+          {[1, 2, 3, 4, 5].map(i => (
+            <div key={i} className="h-12 bg-neutral-700 rounded"></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  if (loading) {
+    return <LoadingSkeleton />
   }
 
   return (
     <div className="space-y-6">
-      {/* Summary */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="card">
           <div className="text-sm text-gray-400 mb-1">Total</div>
@@ -239,27 +240,21 @@ export default function Discrepancies() {
             <AlertTriangle className="text-red-400" size={14} />
             Critical
           </div>
-          <div className="text-2xl font-semibold text-red-400">
-            {summary.critical}
-          </div>
+          <div className="text-2xl font-semibold text-red-400">{summary.critical}</div>
         </div>
         <div className="card">
           <div className="text-sm text-gray-400 mb-1 flex items-center gap-2">
             <AlertCircle className="text-yellow-400" size={14} />
             Warning
           </div>
-          <div className="text-2xl font-semibold text-yellow-400">
-            {summary.warning}
-          </div>
+          <div className="text-2xl font-semibold text-yellow-400">{summary.warning}</div>
         </div>
         <div className="card">
           <div className="text-sm text-gray-400 mb-1 flex items-center gap-2">
             <Info className="text-blue-400" size={14} />
             Info
           </div>
-          <div className="text-2xl font-semibold text-blue-400">
-            {summary.info}
-          </div>
+          <div className="text-2xl font-semibold text-blue-400">{summary.info}</div>
         </div>
       </div>
 
@@ -267,17 +262,21 @@ export default function Discrepancies() {
       <div className="card">
         <div className="flex items-center gap-4 mb-4 flex-wrap">
           <h3 className="panel-title">Filters</h3>
-
+          
+          {/* Time Range Selector */}
           <select
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}
-            className="px-3 py-2 bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark rounded-lg text-sm"
+            disabled={loading}
+            className="px-3 py-2 bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark rounded-lg text-sm disabled:opacity-50"
           >
-            <option value="all">All</option>
-            <option value="1d">Last 1 day</option>
-            <option value="7d">Last 7 days</option>
+            <option value="1d">Last 24 Hours</option>
+            <option value="3d">Last 3 Days</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
           </select>
-
+          
+          {/* Severity Filter */}
           <select
             value={filterSeverity || ''}
             onChange={(e) => setFilterSeverity(e.target.value || null)}
@@ -288,7 +287,8 @@ export default function Discrepancies() {
             <option value="warning">Warning</option>
             <option value="info">Info</option>
           </select>
-
+          
+          {/* Cauldron Filter */}
           <input
             type="text"
             placeholder="Filter by Cauldron ID..."
@@ -296,20 +296,18 @@ export default function Discrepancies() {
             onChange={(e) => setFilterCauldron(e.target.value || null)}
             className="px-3 py-2 bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark rounded-lg text-sm flex-1 min-w-[200px]"
           />
-
+          
+          {/* Refresh Button */}
           <button
             onClick={handleRefresh}
             disabled={loading}
             className="px-3 py-2 bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark rounded-lg text-sm hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             title="Run detection & refresh data"
           >
-            <RefreshCw
-              size={16}
-              className={loading || detecting ? 'animate-spin' : ''}
-            />
-            {detecting ? 'Detecting…' : 'Refresh'}
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            Refresh
           </button>
-
+          
           {lastFetchTime && (
             <span className="text-xs text-gray-600 dark:text-gray-400">
               Last updated: {lastFetchTime.toLocaleTimeString()}
@@ -318,20 +316,38 @@ export default function Discrepancies() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Discrepancies Table */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="panel-title">Discrepancies</h3>
-          <span className="text-sm text-gray-600 dark:text-gray-400">
-            Showing {filteredDiscrepancies.length} of {allDiscrepancies.length}
-          </span>
+          <div className="flex items-center gap-2">
+            <h3 className="panel-title">Discrepancies</h3>
+            <AIHelpButton 
+              componentName="Discrepancies Table"
+              data={{
+                total_discrepancies: allDiscrepancies.length,
+                critical: summary.critical,
+                warning: summary.warning,
+                info: summary.info,
+                time_range: timeRange,
+                sample_discrepancies: filteredDiscrepancies.slice(0, 3).map(d => ({
+                  severity: d.severity,
+                  cauldron_id: d.cauldron_id,
+                  discrepancy_percent: d.discrepancy_percent
+                }))
+              }}
+            />
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              Showing {filteredDiscrepancies.length} of {allDiscrepancies.length}
+            </span>
+          </div>
         </div>
-
         {filteredDiscrepancies.length === 0 ? (
           <div className="text-center py-8 text-gray-400">
             {allDiscrepancies.length === 0
-              ? 'No discrepancies found.'
-              : 'No discrepancies match the current filters.'}
+              ? "No discrepancies found. All tickets match drain events perfectly!"
+              : "No discrepancies match the current filters."}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -355,11 +371,7 @@ export default function Discrepancies() {
                     className="border-t border-border-light dark:border-border-dark hover:bg-panel-light/50 dark:hover:bg-panel-dark/50 transition-colors"
                   >
                     <td className="px-3 py-3">
-                      <div
-                        className={`flex items-center gap-2 px-2 py-1 rounded ${getSeverityColor(
-                          d.severity
-                        )}`}
-                      >
+                      <div className={`flex items-center gap-2 px-2 py-1 rounded ${getSeverityColor(d.severity)}`}>
                         {getSeverityIcon(d.severity)}
                         <span className="text-xs font-medium capitalize text-text-light dark:text-text-dark">
                           {d.severity}
@@ -383,25 +395,16 @@ export default function Discrepancies() {
                     <td className="px-3 py-3 text-text-light dark:text-text-dark">
                       {Math.round(d.actual_drained || 0)} L
                     </td>
-                    <td
-                      className={`px-3 py-3 font-semibold ${(d.discrepancy || 0) > 0
-                        ? 'text-green-400'
-                        : (d.discrepancy || 0) < 0
-                          ? 'text-red-400'
-                          : 'text-gray-400'
-                        }`}
-                    >
-                      {(d.discrepancy || 0) > 0 ? '+' : ''}
-                      {Math.round(d.discrepancy || 0)} L
+                    <td className={`px-3 py-3 font-semibold ${
+                      (d.discrepancy || 0) > 0 ? 'text-green-400' : 
+                      (d.discrepancy || 0) < 0 ? 'text-red-400' : 'text-gray-400'
+                    }`} title={`Raw difference: ${(d.discrepancy || 0).toFixed(2)}L`}>
+                      {(d.discrepancy || 0) > 0 ? '+' : ''}{Math.round(d.discrepancy || 0)} L
                     </td>
-                    <td
-                      className={`px-3 py-3 font-semibold ${Math.abs(d.discrepancy_percent || 0) > 20
-                        ? 'text-red-400'
-                        : Math.abs(d.discrepancy_percent || 0) > 5
-                          ? 'text-yellow-400'
-                          : 'text-gray-400'
-                        }`}
-                    >
+                    <td className={`px-3 py-3 font-semibold ${
+                      Math.abs(d.discrepancy_percent || 0) > 20 ? 'text-red-400' : 
+                      Math.abs(d.discrepancy_percent || 0) > 5 ? 'text-yellow-400' : 'text-gray-400'
+                    }`} title={`Calculation: abs(${(d.discrepancy || 0).toFixed(2)}) / max(${(d.ticket_volume || 0).toFixed(2)}, ${(d.actual_drained || 0).toFixed(2)}, 1.0) * 100 = ${(d.discrepancy_percent || 0).toFixed(2)}%`}>
                       {Math.abs(d.discrepancy_percent || 0).toFixed(1)}%
                     </td>
                   </tr>

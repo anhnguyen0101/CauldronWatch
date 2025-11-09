@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import usePotionStore from '../store/usePotionStore'
+import { AIHelpButton } from './AIExplanation'
 import { motion } from 'framer-motion'
+import { startSocket } from '../services/websocket'
+import { fetchHistory } from '../services/api'
 import { RefreshCw } from 'lucide-react'
-import { fetchHistoryOptimized, invalidateHistoryCache, prefetchNextRange } from '../services/optimizedApi'
 
 const statusColorMap = {
   // Blue → Green: use emerald/green tones for normal/filling states so they read green in light mode
@@ -55,7 +57,7 @@ const fillPercentToGlowColor = (fill, status) => {
   return 'rgba(16,185,129,0.16)'
 }
 
-export default function TimelineHeatmap({ onCellClick } = {}) {
+export default function TimelineHeatmap({ onCellClick } = {}){
   const history = usePotionStore(s => s.history)
   const cauldrons = usePotionStore(s => s.cauldrons)
   const applySnapshot = usePotionStore(s => s.applyHistorySnapshot)
@@ -65,23 +67,30 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
   const [hoveredCauldron, setHoveredCauldron] = useState(null)
   const [hoveredCell, setHoveredCell] = useState(null)
   const [isLive, setIsLive] = useState(true)
-  const [timeRange, setTimeRange] = useState('24h')
+  const [updatedCell, setUpdatedCell] = useState(null)
+  const [timeRange, setTimeRange] = useState('24h') // Default: 24 hours
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  
+  // Store ALL fetched history data (7 days) - fetched once
+  const [allHistoryData, setAllHistoryData] = useState([])
   const [lastFetchTime, setLastFetchTime] = useState(null)
 
-  // ✅ OPTIMIZATION: Use refs to track state without causing re-renders
+  const [columns, setColumns] = useState(() => (history || []).map(h => ({ time: h.time, cauldrons: h.cauldrons || [] })))
+  const columnsMapRef = useRef(new Map())
+
+  // DEBUG: Log cauldrons and history data
+  useEffect(() => {
+    console.log('🔍 TimelineHeatmap DEBUG:')
+    console.log('  📊 Cauldrons in store:', cauldrons.length, cauldrons.map(c => ({ id: c.id, name: c.name, level: c.level })))
+    console.log('  📜 History snapshots:', history.length, history.map(h => ({ time: h.time, hasCauldrons: !!h.cauldrons, cauldronsCount: h.cauldrons?.length || 0, avgLevel: h.avgLevel })))
+    console.log('  📦 Columns data:', columns.length, columns.map(col => ({ time: col.time, cauldrons: col.cauldrons.length })))
+  }, [cauldrons, history, columns])
+
   const timerRef = useRef(null)
   const scrollRef = useRef(null)
   const hasLoadedRef = useRef(false)
-  const liveUpdateTimeoutRef = useRef(null)
-  const loadingRangeRef = useRef(null) // Track which range is currently loading
 
-  // ✅ CRITICAL: Separate historical columns from live column
-  // This prevents historical data from fighting with live updates
-  const [historicalColumns, setHistoricalColumns] = useState([])
-  const [liveColumn, setLiveColumn] = useState(null)
-
-  // Time range options
+  // Time range options (memoized to prevent unnecessary re-renders)
   const timeRangeOptions = React.useMemo(() => [
     { value: '1h', label: 'Last 1 Hour', hours: 1 },
     { value: '6h', label: 'Last 6 Hours', hours: 6 },
@@ -90,212 +99,160 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
     { value: '30d', label: 'Last 30 Days', hours: 24 * 30 },
   ], [])
 
-  // ✅ OPTIMIZATION 1: Load data only for selected time range (not all 7 days upfront)
-  const loadHistoryForRange = useCallback(async (range) => {
-    if (cauldrons.length === 0) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('⏳ Waiting for cauldrons to load...')
+  // Fetch 7 days of data once on mount (covers all time range options)
+  useEffect(() => {
+    if (hasLoadedRef.current) return
+    
+    async function loadAllHistory() {
+      setIsLoadingHistory(true)
+      const endDate = new Date()
+      // Fetch 7 days to cover all time range options (1h, 6h, 24h, 7d)
+      const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000)
+      
+      // Get cauldrons from store for capacity calculation
+      const store = usePotionStore.getState()
+      const cauldronsMap = new Map(store.cauldrons.map(c => [c.id, c]))
+      
+      console.log('📊 Loading 7 days of timeline data (cached for all ranges)...')
+      try {
+        const h = await fetchHistory(null, startDate.toISOString(), endDate.toISOString(), cauldronsMap)
+        if (h && Array.isArray(h)) {
+          console.log(`📊 Loaded ${h.length} history snapshots (7 days) - ready for client-side filtering`)
+          setAllHistoryData(h)
+          setLastFetchTime(new Date())
+          hasLoadedRef.current = true
+          
+          // Apply default 24h filter initially
+          applyTimeRangeFilter('24h', h)
+        }
+      } catch (err) {
+        console.error('❌ Error loading history:', err)
+      } finally {
+        setIsLoadingHistory(false)
       }
-      return
     }
-
-    // Prevent duplicate loads for the same range
-    if (loadingRangeRef.current === range) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`⏭️  Skipping duplicate load for ${range} (already loading)`)
-      }
-      return
+    
+    // Only load if we don't have data yet and cauldrons are loaded
+    const store = usePotionStore.getState()
+    if (store.cauldrons.length > 0) {
+      loadAllHistory()
     }
+  }, [cauldrons.length]) // Re-run if cauldrons are loaded
 
-    loadingRangeRef.current = range
+  // Helper function to filter history by time range (client-side, no API call)
+  const applyTimeRangeFilter = React.useCallback((rangeValue, dataToFilter) => {
+    const selectedRange = timeRangeOptions.find(opt => opt.value === rangeValue)
+    const data = dataToFilter || allHistoryData
+    if (!selectedRange || !data || data.length === 0) return
+
+    const endTime = Date.now()
+    const startTime = endTime - (selectedRange.hours * 60 * 60 * 1000)
+    
+    // Filter client-side by timestamp (now stored in each snapshot)
+    const filtered = data.filter(snapshot => {
+      const snapshotTime = snapshot.timestamp || 0
+      return snapshotTime >= startTime && snapshotTime <= endTime
+    })
+    
+    console.log(`📊 Filtered to ${filtered.length} snapshots for ${selectedRange.label} (from ${data.length} total)`)
+    
+    // Update store with filtered data
+    const push = usePotionStore.getState().pushHistorySnapshot
+    usePotionStore.setState({ history: [] })
+    filtered.forEach(s => push(s))
+  }, [allHistoryData, timeRangeOptions])
+
+  // Apply filter when time range changes (client-side, no API call)
+  useEffect(() => {
+    if (!hasLoadedRef.current || allHistoryData.length === 0) return
+    
+    applyTimeRangeFilter(timeRange)
+  }, [timeRange, allHistoryData.length, applyTimeRangeFilter]) // Re-filter when range changes or data is loaded
+
+  // Manual refresh function
+  const handleRefresh = async () => {
     setIsLoadingHistory(true)
-    const cauldronsMap = new Map(cauldrons.map(c => [c.id, c]))
-
+    const endDate = new Date()
+    const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000)
+    
+    const store = usePotionStore.getState()
+    const cauldronsMap = new Map(store.cauldrons.map(c => [c.id, c]))
+    
+    console.log('🔄 Refreshing timeline data (7 days)...')
     try {
-      const snapshots = await fetchHistoryOptimized(range, cauldronsMap)
-      
-      // Update store with fetched history
-      const push = usePotionStore.getState().pushHistorySnapshot
-      usePotionStore.setState({ history: [] })
-      snapshots.forEach(s => push(s))
-      
-      setLastFetchTime(new Date())
-      
-      // Prefetch next range in background for faster switching
-      prefetchNextRange(range, cauldronsMap)
-      
+      const h = await fetchHistory(null, startDate.toISOString(), endDate.toISOString(), cauldronsMap)
+      if (h && Array.isArray(h)) {
+        console.log(`📊 Refreshed ${h.length} history snapshots`)
+        setAllHistoryData(h)
+        setLastFetchTime(new Date())
+        // Re-apply current filter
+        applyTimeRangeFilter(timeRange, h)
+      }
     } catch (err) {
-      console.error(`❌ Error loading ${range}:`, err)
+      console.error('❌ Error refreshing history:', err)
     } finally {
       setIsLoadingHistory(false)
-      hasLoadedRef.current = true
-      loadingRangeRef.current = null // Clear loading flag
     }
-  }, [cauldrons])
-
-  // ✅ Initial load: Only fetch default time range (24h)
-  useEffect(() => {
-    if (hasLoadedRef.current || cauldrons.length === 0) return
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('📊 Initial load: fetching 24h of data')
-    }
-    loadHistoryForRange('24h')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cauldrons.length]) // Only depend on cauldrons.length, not the callback
-
-  // ✅ Reload when time range changes
-  useEffect(() => {
-    if (!hasLoadedRef.current) return // Don't load on mount (initial load handles it)
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`📊 Time range changed to ${timeRange}, fetching...`)
-    }
-    loadHistoryForRange(timeRange)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange]) // Only depend on timeRange, not the callback
-
-  // ✅ OPTIMIZATION 2: Separate historical data from live updates
-  // Historical columns = immutable snapshots from history
-  // Live column = always reflects current store state
-  useEffect(() => {
-    // Process historical columns
-    const historical = (history || []).map(h => ({
-      time: h.time,
-      timestamp: h.timestamp,
-      cauldrons: h.cauldrons || [],
-      isHistorical: true
-    }))
-    
-    setHistoricalColumns(historical)
-  }, [history])
-
-  // ✅ OPTIMIZATION 3: Update live column immediately when cauldrons change
-  // This ensures the rightmost column ALWAYS shows current state (matches graph)
-  useEffect(() => {
-    if (cauldrons.length === 0) {
-      setLiveColumn(null)
-      return
-    }
-
-    // Debounce rapid updates to prevent excessive re-renders
-    if (liveUpdateTimeoutRef.current) {
-      clearTimeout(liveUpdateTimeoutRef.current)
-    }
-
-    liveUpdateTimeoutRef.current = setTimeout(() => {
-      const now = new Date()
-      setLiveColumn({
-        time: now.toLocaleTimeString(),
-        timestamp: now.getTime(),
-        cauldrons: cauldrons.map(c => ({
-          id: c.id,
-          level: c.level ?? 0,
-          fillPercent: c.level ?? 0,
-          status: c.status || 'normal',
-          name: c.name,
-          drainVolume: c.drainVolume ?? 0,
-          discrepancy: c.discrepancy ?? 0,
-          alertCount: c.alertCount ?? 0
-        })),
-        isLive: true
-      })
-    }, 100) // 100ms debounce
-
-    return () => {
-      if (liveUpdateTimeoutRef.current) {
-        clearTimeout(liveUpdateTimeoutRef.current)
-      }
-    }
-  }, [cauldrons]) // Update whenever cauldrons change
-
-  // ✅ Combine historical + live columns for display
-  const allColumns = React.useMemo(() => {
-    const columns = [...historicalColumns]
-    if (liveColumn) {
-      columns.push(liveColumn)
-    }
-    return columns
-  }, [historicalColumns, liveColumn])
-
-  // Auto-scroll to rightmost (live) column
-  useEffect(() => {
-    if (!isLive || allColumns.length === 0) return
-
-    const el = scrollRef.current
-    if (!el) return
-
-    // Small delay to ensure DOM is updated
-    setTimeout(() => {
-      el.scrollTo({
-        left: Math.max(0, el.scrollWidth - el.clientWidth),
-        behavior: 'smooth'
-      })
-    }, 50)
-  }, [isLive, allColumns.length])
-
-  // Manual refresh
-  const handleRefresh = async () => {
-    invalidateHistoryCache()
-    await loadHistoryForRange(timeRange)
   }
 
-  // Helper to get metrics for a cauldron in a column
-  const getMetrics = useCallback((column, cauldronId) => {
-    return column?.cauldrons?.find(c => c.id === cauldronId) || null
-  }, [])
+  // init from history
+  useEffect(()=>{
+    const initial = (history || []).map(h => ({ time: h.time, cauldrons: h.cauldrons || [] }))
+    setColumns(initial)
+    columnsMapRef.current = new Map(initial.map(c => [c.time, c]))
+    // scroll to rightmost
+    const el = scrollRef.current
+    setTimeout(()=>{
+      if(el) el.scrollTo({ left: Math.max(0, el.scrollWidth - el.clientWidth), behavior: 'smooth' })
+    }, 30)
+  }, [history?.length])
 
-  // Handle cell click
-  const handleCellClick = useCallback((colIndex, cauldronId) => {
-    // Don't apply snapshot if clicking live column
-    if (colIndex === allColumns.length - 1 && allColumns[colIndex]?.isLive) {
-      console.log('Clicked live column, no snapshot to apply')
-      return
-    }
+  // helper to read metrics for a cauldron in a column/day
+  const getMetrics = (day, id) => {
+    return (day?.cauldrons || []).find(c => c.id === id) || null
+  }
 
-    if (history && history[colIndex]) {
+  // apply snapshot when clicking a cell
+  const handleCellClick = (colIndex, cauldronId) => {
+    // if history contains same-length snapshot, call applySnapshot with index
+    if(history && history[colIndex]){
       applySnapshot(colIndex)
       setSelectedIndex(colIndex)
     }
-    
-    if (onCellClick) {
-      onCellClick({ colIndex, cauldronId })
-    }
-  }, [allColumns, history, applySnapshot, setSelectedIndex, onCellClick])
+    if(onCellClick) onCellClick({ colIndex, cauldronId })
+  }
 
-  // Playback functionality
-  useEffect(() => {
-    if (!playing) return
-    if (!history || history.length === 0) {
-      setPlaying(false)
-      return
-    }
-
+  // playback (simple)
+  useEffect(()=>{
+    if(!playing) return
+    if(!history || history.length === 0){ setPlaying(false); return }
     let idx = 0
-    timerRef.current = setInterval(() => {
+    timerRef.current = setInterval(()=>{
       applySnapshot(idx)
-      
       const el = scrollRef.current
       const col = el?.querySelectorAll('.pw-col')?.[idx]
-      if (col && el) {
-        col.scrollIntoView({ behavior: 'smooth', inline: 'center' })
-      }
-
+      if(col && el) col.scrollIntoView({ behavior: 'smooth', inline: 'center' })
       idx += 1
-      if (idx >= history.length) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-        setPlaying(false)
-      }
+      if(idx >= history.length){ clearInterval(timerRef.current); timerRef.current = null; setPlaying(false) }
     }, 700)
+    return ()=>{ if(timerRef.current){ clearInterval(timerRef.current); timerRef.current = null } }
+  }, [playing, history])
 
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
+  // Subscribe to store updates for live updates
+  // The main socket connection in useInit already updates the store's history
+  // This effect just ensures the timeline updates when history changes
+  useEffect(()=>{
+    if(!isLive) return
+    
+    // History updates are already handled by the main useEffect above
+    // Just ensure we scroll to the rightmost column when new data arrives
+    const el = scrollRef.current
+    if(el && columns.length > 0){
+      setTimeout(()=>{
+        el.scrollTo({ left: Math.max(0, el.scrollWidth - el.clientWidth), behavior: 'smooth' })
+      }, 100)
     }
-  }, [playing, history, applySnapshot])
+  }, [isLive, columns.length, history?.length])
 
   return (
     <div className="w-full">
@@ -305,9 +262,22 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
         </div>
         
         <div className="flex items-center gap-3 flex-wrap">
+          <AIHelpButton 
+            componentName="Timeline Heatmap"
+            data={{
+              snapshots: history?.length || 0,
+              cauldrons: columns.length > 0 ? columns[0]?.cauldrons?.length || 0 : 0,
+              time_range: timeRange,
+              is_live: isLive
+            }}
+            className="p-2.5"
+            iconSize="w-5 h-5"
+          />
+          <button aria-label={isLive ? 'Pause live' : 'Resume live'} onClick={() => setIsLive(v => !v)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{isLive ? '⏸ Pause Live' : '▶ Resume Live'}</button>
+          
           {/* Time Range Selector */}
           <div className="flex items-center gap-2">
-            <label className="text-sm text-text-light dark:text-gray-400">Time Range:</label>
+            <label className="text-sm text-gray-400">Time Range:</label>
             <select
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value)}
@@ -320,53 +290,25 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                 </option>
               ))}
             </select>
-            
             {isLoadingHistory && (
-              <span className="text-xs text-text-light dark:text-gray-400">Loading...</span>
+              <span className="text-xs text-gray-400">Loading...</span>
             )}
-            
             {lastFetchTime && !isLoadingHistory && (
-              <span className="text-xs text-gray-600 dark:text-gray-400">
-                (Updated {lastFetchTime.toLocaleTimeString()})
+              <span className="text-xs text-gray-500">
+                ({allHistoryData.length} snapshots cached)
               </span>
             )}
+            <button
+              onClick={handleRefresh}
+              disabled={isLoadingHistory}
+              className="px-2 py-1.5 text-sm rounded-md bg-neutral-800/60 border border-neutral-700 text-white hover:bg-neutral-800/80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              title="Refresh timeline data (7 days)"
+            >
+              <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
+            </button>
           </div>
-
-          {/* Timeline Playback Button - Distinct styling */}
-          <button
-            aria-label={playing ? 'Pause timeline playback' : 'Play timeline playback'}
-            onClick={() => setPlaying(p => !p)}
-            className="px-3 py-1.5 text-sm rounded-md bg-panel-light dark:bg-neutral-800/60 border border-border-light dark:border-neutral-700 text-text-light dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-800/80 flex items-center gap-2 transition-colors"
-            title={playing ? 'Pause timeline playback' : 'Play timeline playback'}
-          >
-            {playing ? '⏸' : '▶'}
-            <span className="text-xs">Timeline</span>
-          </button>
           
-          {/* Live Updates Toggle - Distinct styling */}
-          <button
-            aria-label={isLive ? 'Pause live updates' : 'Resume live updates'}
-            onClick={() => setIsLive(v => !v)}
-            className={`px-3 py-1.5 text-sm rounded-md border flex items-center gap-2 transition-colors ${
-              isLive 
-                ? 'bg-panel-light dark:bg-neutral-800/60 border-accent/50 dark:border-accent/30 hover:bg-gray-100 dark:hover:bg-neutral-800/80 text-text-light dark:text-gray-200 ring-1 ring-accent/20 dark:ring-accent/10' 
-                : 'bg-panel-light dark:bg-neutral-800/40 border-border-light dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-800/60 text-text-light/70 dark:text-gray-400'
-            }`}
-            title={isLive ? 'Pause live updates (stops real-time data)' : 'Resume live updates (enables real-time data)'}
-          >
-            {isLive ? '⏸' : '▶'}
-            <span className="text-xs">{isLive ? 'Pause Live' : 'Resume Live'}</span>
-          </button>
-          
-          {/* Refresh Button */}
-          <button
-            onClick={handleRefresh}
-            disabled={isLoadingHistory}
-            className="px-2 py-1.5 text-sm rounded-md bg-panel-light dark:bg-neutral-800/60 border border-border-light dark:border-neutral-700 text-text-light dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-800/80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-            title="Refresh timeline data"
-          >
-            <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
-          </button>
+          <div className="text-sm text-gray-400">Heatmap (latest on right). Click a cell to apply snapshot.</div>
         </div>
       </div>
 
@@ -376,7 +318,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
         <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
           <div className="inline-flex space-x-2 p-2" style={{ minWidth: 'min-content' }}>
            
-            {allColumns.map((column, colIndex) => {
+            {columns.map((column, colIndex) => {
               const isLiveCol = column.isLive === true
               
               return (
@@ -403,13 +345,12 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                       const colorClass = fillPercentToColorClass(fill, status)
                       const glowColor = fillPercentToGlowColor(fill, status)
                       const drain = m?.drainVolume ?? 0
+                      const discrepancy = m?.discrepancy ?? 0
                       const alertCount = m?.alertCount ?? 0
+                      const isLatestCol = colIndex === (columns.length - 1)
 
                       return (
-                        <div
-                          key={c.id}
-                          className={`${rowIndex % 2 === 0 ? 'bg-panel-light/0 dark:bg-panel-dark/0' : 'bg-panel-light/5 dark:bg-panel-dark/5'} rounded-md p-1`}
-                        >
+                        <div key={c.id} className={`${rowIndex % 2 === 0 ? 'bg-panel-light/0 dark:bg-panel-dark/0' : 'bg-panel-light/5 dark:bg-panel-dark/5'} rounded-md p-1`}>
                           <div
                             onMouseEnter={(e) => {
                               const r = e.currentTarget.getBoundingClientRect()
@@ -445,18 +386,15 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                             {alertCount > 0 && (
                               <motion.div
                                 initial={{ scale: 0.8, opacity: 0 }}
-                                animate={{ scale: [1.05, 1, 1.05], opacity: 1 }}
-                                transition={{ repeat: Infinity, duration: 1.2 }}
-                                className={`absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs text-white font-bold flex items-center justify-center shadow-lg ring-2 ${
-                                  alertCount >= 3
-                                    ? 'bg-orange-500 ring-orange-300'
-                                    : 'bg-rose-500 ring-red-300'
-                                }`}
+                                animate={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { scale: [1.3, 1, 1.15, 1], x: [0, -3, 3, 0], opacity: 1 } : { scale: [1.05, 1, 1.05], opacity: 1 } }
+                                transition={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { duration: 0.9 } : { repeat: Infinity, duration: 1.2 } }
+                                className={`absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs text-white font-bold flex items-center justify-center shadow-lg ring-2 ${alertCount >= 3 ? 'bg-orange-500 ring-orange-300' : 'bg-rose-500 ring-red-300'}`}
                                 title={`${alertCount} unresolved alerts`}
                               >
                                 {alertCount}
                               </motion.div>
                             )}
+                            {discrepancy > 0 && (<div className="absolute inset-0 rounded-md ring-2 ring-red-500/60 pointer-events-none" />)}
                           </div>
                         </div>
                       )
@@ -467,36 +405,39 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
             })}
           </div>
         </div>
-
-        <div className="absolute left-0 top-0 h-full w-6 pointer-events-none bg-gradient-to-r from-panel-light to-transparent dark:from-panel-dark/90" />
-        <div className="absolute right-0 top-0 h-full w-6 pointer-events-none bg-gradient-to-l from-panel-light to-transparent dark:from-panel-dark/90" />
       </div>
 
-      {/* Tooltip */}
-      {hoveredCell && hoveredCell.metrics && hoveredCell.rect && createPortal(((() => {
-        const r = hoveredCell.rect
-        const left = Math.min(window.innerWidth - 260, r.right + 8)
-        const top = Math.max(8, r.top - 8)
-        const isLiveCol = hoveredCell.column?.isLive === true
-        
-        return (
-          <div
-            style={{ position: 'fixed', left, top, zIndex: 60 }}
-            className="w-64 bg-panel-light dark:bg-panel-dark text-text-light dark:text-text-dark p-3 rounded-md shadow-lg border border-border-light dark:border-border-dark"
-          >
-            <div className="font-semibold flex items-center justify-between">
-              <span>{hoveredCell.metrics.name ?? hoveredCell.cauldronId}</span>
+      {hoveredCell && hoveredCell.metrics && hoveredCell.rect && createPortal(
+        (() => {
+          const r = hoveredCell.rect
+          const left = Math.min(window.innerWidth - 260, r.right + 8)
+          const top = Math.max(8, r.top - 8)
+          const isLiveCol = hoveredCell.colIndex === (columns.length - 1)
+          return (
+            <div
+              style={{ position: 'fixed', left, top, zIndex: 60 }}
+              className="w-64 bg-panel-light dark:bg-panel-dark text-text-light dark:text-text-dark p-3 rounded-md shadow-lg border border-border-light dark:border-border-dark"
+            >
+              <div className="font-semibold flex items-center justify-between">
+                <span>{hoveredCell.metrics.name ?? hoveredCell.cauldronId}</span>
+                {isLiveCol && (
+                  <span className="text-xs text-accent font-bold">● LIVE</span>
+                )}
+              </div>
+              <div className="text-xs text-neutral-300">Time: {hoveredCell.column?.time || hoveredCell.day?.time}</div>
+              <div className="mt-1 text-sm">
+                Status: <span className="font-medium">{hoveredCell.metrics.status}</span>
+              </div>
+              <div className="text-xs">Fill: {hoveredCell.metrics.fillPercent ?? hoveredCell.metrics.level}%</div>
+              <div className="text-xs">Drain volume: {hoveredCell.metrics.drainVolume}L</div>
+              <div className="text-xs">Discrepancy: {hoveredCell.metrics.discrepancy}</div>
+              <div className="text-xs">Alerts: {hoveredCell.metrics.alertCount}</div>
+              <div className="text-xs">Predicted overflow: {hoveredCell.day?.forecast?.find(f=>f.id===hoveredCell.cauldronId)?.predictedOverflow ? 'Yes' : 'No'}</div>
             </div>
-            <div className="text-xs text-neutral-300">Time: {hoveredCell.column?.time}</div>
-            <div className="mt-1 text-sm">
-              Status: <span className="font-medium">{hoveredCell.metrics.status}</span>
-            </div>
-            <div className="text-xs">Fill: {hoveredCell.metrics.fillPercent ?? hoveredCell.metrics.level}%</div>
-            <div className="text-xs">Drain volume: {hoveredCell.metrics.drainVolume}L</div>
-            <div className="text-xs">Alerts: {hoveredCell.metrics.alertCount}</div>
-          </div>
-        )
-      })()), document.body)}
+          )
+        })(),
+        document.body
+      )}
     </div>
   )
 }

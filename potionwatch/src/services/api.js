@@ -122,11 +122,13 @@ export async function fetchDrainEvents(cauldronId, date = null) {
 }
 
 // Fetch discrepancies (Person 3)
-export async function fetchDiscrepancies(severity = null, cauldronId = null) {
+export async function fetchDiscrepancies(severity = null, cauldronId = null, startDate = null, endDate = null) {
   // Build params object (used in both initial request and retry)
   const params = {}
   if (severity) params.severity = severity
   if (cauldronId) params.cauldron_id = cauldronId
+  if (startDate) params.start_date = startDate
+  if (endDate) params.end_date = endDate
 
   try {
     const response = await api.get('/api/discrepancies', { params })
@@ -137,7 +139,10 @@ export async function fetchDiscrepancies(severity = null, cauldronId = null) {
     if (error.response?.status === 404) {
       console.log('No cached discrepancies, running detection...')
       try {
-        await api.post('/api/discrepancies/detect')
+        const detectParams = {}
+        if (startDate) detectParams.start_date = startDate
+        if (endDate) detectParams.end_date = endDate
+        await api.post('/api/discrepancies/detect', null, { params: detectParams })
         // Retry fetching with same params
         const retryResponse = await api.get('/api/discrepancies', { params })
         return retryResponse.data
@@ -151,16 +156,16 @@ export async function fetchDiscrepancies(severity = null, cauldronId = null) {
 }
 
 // Detect discrepancies (Person 3) - triggers detection and returns results
-export async function detectDiscrepancies(window = null) {
+export async function detectDiscrepancies(startDate = null, endDate = null) {
   try {
     const params = {}
-
-    // window is expected like: { start_time: 'ISO', end_time: 'ISO' }
-    if (window?.start_time) {
-      params.start_date = window.start_time
+    
+    // Accept date strings directly (YYYY-MM-DD format)
+    if (startDate) {
+      params.start_date = startDate
     }
-    if (window?.end_time) {
-      params.end_date = window.end_time
+    if (endDate) {
+      params.end_date = endDate
     }
 
     console.log('📨 POST /api/discrepancies/detect', params)
@@ -222,5 +227,113 @@ export async function fetchMarket() {
   } catch (error) {
     console.warn('Market not available or error fetching market:', error?.message || error)
     return null
+  }
+}
+
+// Forecast endpoints
+export async function fetchMinimumWitches(safetyMarginPercent = 0.9, unloadTimeMinutes = 15) {
+  try {
+    const response = await api.get('/api/forecast/minimum-witches', {
+      params: {
+        safety_margin_percent: safetyMarginPercent,
+        unload_time_minutes: unloadTimeMinutes
+      }
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching minimum witches:', error)
+    return { minimum_witches: 0, schedule: [], cauldrons_serviced: 0, total_cauldrons: 0, verification: {} }
+  }
+}
+
+export async function fetchDailySchedule(targetDate = null) {
+  try {
+    const params = {}
+    if (targetDate) {
+      params.target_date = targetDate
+    }
+    const response = await api.get('/api/forecast/daily-schedule', { params })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching daily schedule:', error)
+    return { date: null, minimum_witches: 0, schedules: [], total_tasks: 0, repeating: false }
+  }
+}
+
+// AI-Powered Insights Endpoints
+export async function fetchAISummary(timeRange = "24 hours") {
+  try {
+    const response = await api.get('/api/ai/summary', {
+      params: { time_range: timeRange }
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching AI summary:', error)
+    return {
+      summary: "Unable to generate AI summary at this time.",
+      key_findings: [],
+      recommendations: [],
+      risk_level: "UNKNOWN",
+      generated_at: new Date().toISOString()
+    }
+  }
+}
+
+export async function fetchAIOptimizationPlan() {
+  try {
+    const response = await api.get('/api/ai/optimization-plan')
+    return response.data
+  } catch (error) {
+    console.error('Error fetching AI optimization plan:', error)
+    return {
+      plan: "Unable to generate optimization plan at this time.",
+      witch_allocation: { witches_needed: 0, rationale: "" },
+      expected_savings: { witch_hours_saved: "0 hours", cost_reduction: "0%" },
+      implementation_steps: [],
+      generated_at: new Date().toISOString()
+    }
+  }
+}
+
+export async function fetchAIFraudAnalysis(startDate = null, endDate = null) {
+  try {
+    const params = {}
+    if (startDate) params.start_date = startDate
+    if (endDate) params.end_date = endDate
+    
+    const response = await api.get('/api/ai/fraud-analysis', { params })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching AI fraud analysis:', error)
+    return {
+      suspicious_patterns: [],
+      courier_risk_scores: {},
+      investigation_priorities: [],
+      generated_at: new Date().toISOString()
+    }
+  }
+}
+
+// Contextual AI explanation for specific components
+export async function fetchAIExplanation(componentName, componentData) {
+  try {
+    const response = await api.post('/api/ai/explain', {
+      component_name: componentName,
+      data: componentData
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching AI explanation:', error)
+    // Return fallback explanation
+    return {
+      main_idea: `This ${componentName} displays important monitoring data for your potion network.`,
+      key_points: [
+        "Data is updated in real-time",
+        "Colors indicate status levels",
+        "Click elements for more details"
+      ],
+      how_to_read: "Review the visual elements and their labels to understand the current state.",
+      what_to_look_for: "Watch for unusual patterns or values that deviate from normal operations."
+    }
   }
 }

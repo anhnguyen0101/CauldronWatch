@@ -6,6 +6,7 @@ import AlertsPanel from '../components/AlertsPanel'
 import MetricsCards from '../components/MetricsCards'
 import TicketsTable from '../components/TicketsTable'
 import TimelineHeatmap from '../components/TimelineHeatmap'
+import { AIHelpButton } from '../components/AIExplanation'
 import usePotionStore from '../store/usePotionStore'
 
 export default function Overview(){
@@ -26,19 +27,51 @@ export default function Overview(){
   // Memoize nodes array - only recreate when cauldrons, market, or lastUpdate changes
   // ✅ Include lastUpdate to ensure graph updates when timeline snapshots are applied
   const nodes = useMemo(() => {
-    const nodeList = cauldrons.map(c => ({
-    id: c.cauldron_id || c.id || c.cauldronId,
-    name: c.name || c.label || (`${c.cauldron_id || c.id}`),
-    fillPercent: c.level ?? c.fillPercent ?? 0,
-    status: c.status || 'normal',
-      x: typeof c.x === 'number' ? c.x : undefined,
-      y: typeof c.y === 'number' ? c.y : undefined,
-      lat: c.latitude ?? c.lat,
-      lng: c.longitude ?? c.lng,
-      latitude: c.latitude ?? c.lat,
-      longitude: c.longitude ?? c.lng,
-    isMarket: false
-  }))
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔄 Overview: Recomputing nodes (lastUpdate:', lastUpdate, ', cauldrons:', cauldrons.length, ')')
+      if (cauldrons.length > 0) {
+        console.log('   Sample cauldron:', { 
+          id: cauldrons[0].id, 
+          name: cauldrons[0].name, 
+          level: cauldrons[0].level,
+          x: cauldrons[0].x,
+          y: cauldrons[0].y,
+          hasXY: typeof cauldrons[0].x === 'number' && typeof cauldrons[0].y === 'number'
+        })
+        // Log high level cauldrons
+        cauldrons.filter(c => c.level > 90).forEach(c => {
+          console.log(`   🔥 High level: ${c.name} = ${c.level}%`)
+        })
+      }
+    }
+    
+    const nodeList = cauldrons.map(c => {
+      const level = c.level ?? c.fillPercent ?? 0
+      
+      // Dynamically calculate status based on level (matches alert thresholds)
+      let status = 'normal'
+      if (level > 95) {
+        status = 'overfill'
+      } else if (level < 20) {
+        status = 'underfill'
+      } else if (level > 80) {
+        status = 'filling'
+      }
+      
+      return {
+        id: c.cauldron_id || c.id || c.cauldronId,
+        name: c.name || c.label || (`${c.cauldron_id || c.id}`),
+        fillPercent: level,
+        status: status,
+        x: typeof c.x === 'number' ? c.x : undefined,
+        y: typeof c.y === 'number' ? c.y : undefined,
+        lat: c.latitude ?? c.lat,
+        lng: c.longitude ?? c.lng,
+        latitude: c.latitude ?? c.lat,
+        longitude: c.longitude ?? c.lng,
+        isMarket: false
+      }
+    })
 
   if (market) {
       nodeList.push({

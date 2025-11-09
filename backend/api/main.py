@@ -15,6 +15,8 @@ from threading import Lock
 from backend.api.reconcile_service import reconcile_from_live
 from backend.api.cached_eog_client import CachedEOGClient
 from backend.api.websocket import ws_manager
+from backend.api.forecast_service import ForecastService
+from backend.api.ai_insights import AIInsights
 from backend.database.db import init_db, get_db
 from backend.models.schemas import (
     CauldronDto,
@@ -39,16 +41,69 @@ import os
 
 
 _DISCREP_CACHE_LOCK = Lock()
-_DISCREP_CACHE: Optional[DiscrepanciesDto] = None
+_DISCREP_CACHE: Dict[str, tuple] = {}  # cache_key -> (result, timestamp)
+_CACHE_EXPIRY_SECONDS = 300  # 5 minutes cache
+_FORECAST_CACHE_LOCK = Lock()
+_FORECAST_CACHE: Dict[str, tuple] = {}  # cache_key -> (result, timestamp)
+_FORECAST_EXPIRY_SECONDS = 180  # 3 minutes cache (forecast changes less frequently)
 _LAST_DRAIN_EVENTS_LOCK = Lock()
 _LAST_DRAIN_EVENTS: Dict[str, List[str]] = {}  # cauldron_id -> list of drain event IDs
 _LAST_DISCREPANCY_IDS_LOCK = Lock()
 _LAST_DISCREPANCY_IDS: set = set()  # Set of (ticket_id, cauldron_id) tuples
 
-def _set_last_discrepancies(res: DiscrepanciesDto) -> None:
+def _get_cache_key(start_date: Optional[datetime], end_date: Optional[datetime]) -> str:
+    """Generate cache key from date range"""
+    start_str = start_date.date().isoformat() if start_date else "None"
+    end_str = end_date.date().isoformat() if end_date else "None"
+    return f"{start_str}:{end_str}"
+
+def _set_last_discrepancies(res: DiscrepanciesDto, start_date: Optional[datetime], end_date: Optional[datetime]) -> None:
+    """Cache discrepancy results with timestamp"""
     global _DISCREP_CACHE
+    cache_key = _get_cache_key(start_date, end_date)
     with _DISCREP_CACHE_LOCK:
-        _DISCREP_CACHE = res
+        _DISCREP_CACHE[cache_key] = (res, datetime.now())
+        print(f"📦 Cached discrepancies for key: {cache_key}")
+
+def _get_last_discrepancies(start_date: Optional[datetime], end_date: Optional[datetime]) -> Optional[DiscrepanciesDto]:
+    """Get cached discrepancy results if not expired"""
+    cache_key = _get_cache_key(start_date, end_date)
+    with _DISCREP_CACHE_LOCK:
+        if cache_key in _DISCREP_CACHE:
+            result, timestamp = _DISCREP_CACHE[cache_key]
+            age_seconds = (datetime.now() - timestamp).total_seconds()
+            if age_seconds < _CACHE_EXPIRY_SECONDS:
+                print(f"✅ Using cached discrepancies for {cache_key} (age: {int(age_seconds)}s)")
+                return result
+            else:
+                print(f"⏰ Cache expired for {cache_key} (age: {int(age_seconds)}s)")
+                del _DISCREP_CACHE[cache_key]
+        return None
+
+def _get_forecast_cache_key(safety_margin: float, unload_time: float) -> str:
+    """Generate cache key for forecast results"""
+    return f"forecast:{safety_margin:.2f}:{unload_time:.1f}"
+
+def _set_forecast_cache(key: str, result: Dict) -> None:
+    """Cache forecast results with timestamp"""
+    global _FORECAST_CACHE
+    with _FORECAST_CACHE_LOCK:
+        _FORECAST_CACHE[key] = (result, datetime.now())
+        print(f"📦 Cached forecast for key: {key}")
+
+def _get_forecast_cache(key: str) -> Optional[Dict]:
+    """Get cached forecast results if not expired"""
+    with _FORECAST_CACHE_LOCK:
+        if key in _FORECAST_CACHE:
+            result, timestamp = _FORECAST_CACHE[key]
+            age_seconds = (datetime.now() - timestamp).total_seconds()
+            if age_seconds < _FORECAST_EXPIRY_SECONDS:
+                print(f"✅ Using cached forecast for {key} (age: {int(age_seconds)}s)")
+                return result
+            else:
+                print(f"⏰ Forecast cache expired for {key} (age: {int(age_seconds)}s)")
+                del _FORECAST_CACHE[key]
+        return None
 
 
 def check_and_populate_database():
@@ -148,10 +203,6 @@ def _populate_database_now(db):
         import traceback
         traceback.print_exc()
         print("   Server will continue, but data may be incomplete")
-
-def _get_last_discrepancies() -> Optional[DiscrepanciesDto]:
-    with _DISCREP_CACHE_LOCK:
-        return _DISCREP_CACHE
 
 def _to_date(s: str):
     return datetime.strptime(s, "%Y-%m-%d").date()
@@ -515,6 +566,196 @@ async def get_daily_drain_summary(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== Forecast Endpoints ====================
+
+@app.get("/api/forecast/minimum-witches")
+async def get_minimum_witches(
+    safety_margin_percent: float = 0.9,
+    unload_time_minutes: float = 15.0,
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Calculate minimum number of witches needed to prevent all cauldrons from overflowing forever
+    
+    Creates a repeating daily schedule that works indefinitely
+    
+    OPTIMIZATION: Results are cached for 3 minutes (forecast doesn't change frequently).
+    
+    Args:
+        safety_margin_percent: Safety margin (0.9 = service at 90% full, default: 0.9)
+        unload_time_minutes: Time to unload at market (default: 15 minutes)
+        use_cache: Whether to use cached data and results
+    
+    Returns:
+        Dict with minimum_witches, schedule, and verification
+    """
+    try:
+        # Check cache first (huge performance boost!)
+        if use_cache:
+            cache_key = _get_forecast_cache_key(safety_margin_percent, unload_time_minutes)
+            cached = _get_forecast_cache(cache_key)
+            if cached:
+                return cached
+        
+        print(f"🔮 Calculating fresh forecast (safety={safety_margin_percent}, unload={unload_time_minutes}min)...")
+        # Use longer cache TTL for forecast to avoid repeated expensive calculations
+        client = CachedEOGClient(db, cache_ttl_minutes=30)
+        
+        # Fetch all required data (use cache aggressively)
+        cauldrons = client.get_cauldrons(use_cache=True)
+        couriers = client.get_couriers(use_cache=True)
+        network = client.get_network(use_cache=True)
+        market = client.get_market(use_cache=True)
+        
+        # Get latest levels (use cache aggressively)
+        latest_data = client.get_latest_levels(use_cache=True)
+        latest_levels = {}
+        for point in latest_data:
+            cauldron_id = point.cauldron_id
+            if cauldron_id:
+                # Keep the most recent level for each cauldron
+                if cauldron_id not in latest_levels:
+                    latest_levels[cauldron_id] = point.level
+                else:
+                    # Compare timestamps to keep latest
+                    if hasattr(point, 'timestamp') and point.timestamp:
+                        # Check if this timestamp is newer
+                        existing_timestamp = latest_levels.get(f"{cauldron_id}_timestamp")
+                        if not existing_timestamp or point.timestamp > existing_timestamp:
+                            latest_levels[cauldron_id] = point.level
+                            latest_levels[f"{cauldron_id}_timestamp"] = point.timestamp
+        
+        # Clean up timestamp keys from latest_levels
+        latest_levels_clean = {k: v for k, v in latest_levels.items() if not k.endswith("_timestamp")}
+        
+        # Get analyses (contains fill_rate) - use cache aggressively
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(use_cache=True)  # Always use cache for forecast
+        
+        # Convert analyses to dict format expected by ForecastService
+        analyses_dict = {}
+        for cauldron_id, analysis in analyses.items():
+            analyses_dict[cauldron_id] = analysis
+        
+        # Create forecast service
+        forecast_service = ForecastService(
+            cauldrons=cauldrons,
+            couriers=couriers,
+            network=network,
+            market=market,
+            analyses=analyses_dict,
+            latest_levels=latest_levels_clean
+        )
+        
+        # Calculate minimum witches (expensive operation!)
+        result = forecast_service.calculate_minimum_witches(
+            safety_margin_percent=safety_margin_percent,
+            unload_time_minutes=unload_time_minutes
+        )
+        
+        # Cache the result
+        if use_cache:
+            cache_key = _get_forecast_cache_key(safety_margin_percent, unload_time_minutes)
+            _set_forecast_cache(cache_key, result)
+        
+        print(f"✅ Forecast calculated: {result['minimum_witches']} witches")
+        return result
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error in get_minimum_witches: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/forecast/daily-schedule")
+async def get_daily_schedule(
+    target_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Generate a full daily repeating schedule for all witches
+    
+    This schedule repeats every day and prevents overflow forever
+    
+    Args:
+        target_date: Date to generate schedule for in YYYY-MM-DD format (default: today)
+        use_cache: Whether to use cached data
+    
+    Returns:
+        Dict with daily schedule for each witch (repeating schedule)
+    """
+    try:
+        client = CachedEOGClient(db)
+        
+        # Fetch all required data
+        cauldrons = client.get_cauldrons(use_cache=use_cache)
+        couriers = client.get_couriers(use_cache=use_cache)
+        network = client.get_network(use_cache=use_cache)
+        market = client.get_market(use_cache=use_cache)
+        
+        # Get latest levels
+        latest_data = client.get_latest_levels(use_cache=use_cache)
+        latest_levels = {}
+        for point in latest_data:
+            cauldron_id = point.cauldron_id
+            if cauldron_id:
+                # Keep the most recent level for each cauldron
+                if cauldron_id not in latest_levels:
+                    latest_levels[cauldron_id] = point.level
+                else:
+                    # Compare timestamps to keep latest
+                    if hasattr(point, 'timestamp') and point.timestamp:
+                        # Check if this timestamp is newer
+                        existing_timestamp = latest_levels.get(f"{cauldron_id}_timestamp")
+                        if not existing_timestamp or point.timestamp > existing_timestamp:
+                            latest_levels[cauldron_id] = point.level
+                            latest_levels[f"{cauldron_id}_timestamp"] = point.timestamp
+        
+        # Clean up timestamp keys from latest_levels
+        latest_levels_clean = {k: v for k, v in latest_levels.items() if not k.endswith("_timestamp")}
+        
+        # Get analyses
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(use_cache=use_cache)
+        analyses_dict = {}
+        for cauldron_id, analysis in analyses.items():
+            analyses_dict[cauldron_id] = analysis
+        
+        # Parse target_date
+        parsed_date = None
+        if target_date:
+            try:
+                parsed_date = datetime.strptime(target_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid date format. Use YYYY-MM-DD")
+        
+        # Create forecast service
+        forecast_service = ForecastService(
+            cauldrons=cauldrons,
+            couriers=couriers,
+            network=network,
+            market=market,
+            analyses=analyses_dict,
+            latest_levels=latest_levels_clean
+        )
+        
+        # Generate daily schedule
+        result = forecast_service.generate_daily_schedule(
+            target_date=parsed_date
+        )
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error in get_daily_schedule: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== Legacy Endpoints for Person 2 & 3 (Deprecated - Use Analysis Endpoints Above) ====================
 
 @app.post("/api/drains/detect", response_model=DrainEventsDto)
@@ -596,23 +837,37 @@ async def get_drain_events(
 
 @app.post("/api/discrepancies/detect", response_model=DiscrepanciesDto)
 async def detect_discrepancies(
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    start_date: Optional[str] = None,  # YYYY-MM-DD format
+    end_date: Optional[str] = None,    # YYYY-MM-DD format
     db: Session = Depends(get_db),
     use_cache: bool = True
 ):
     """
     Run ticket↔drain reconciliation over the given window (all cauldrons).
     Person 3's implementation - matches tickets to drain events and detects discrepancies.
+    
+    OPTIMIZATION: Results are cached for 5 minutes per date range.
     """
     try:
+        # Parse date strings to datetime objects
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d") if start_date else None
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d") if end_date else None
+        
+        # Check cache first
+        if use_cache:
+            cached = _get_last_discrepancies(start_dt, end_dt)
+            if cached:
+                return cached
+        
+        print(f"🔍 Running fresh discrepancy detection for {start_date} to {end_date}...")
+        
         client = CachedEOGClient(db)
         tickets_dto: TicketsDto = client.get_tickets(use_cache=use_cache)
 
         # --- filter tickets by window (inclusive) ---
-        if start_date or end_date:
-            s = start_date.date() if start_date else None
-            e = end_date.date()   if end_date   else None
+        if start_dt or end_dt:
+            s = start_dt.date() if start_dt else None
+            e = end_dt.date()   if end_dt   else None
             tickets_dto.transport_tickets = [
                 t for t in tickets_dto.transport_tickets
                 if ((s is None or _to_date(t.date) >= s) and
@@ -621,21 +876,85 @@ async def detect_discrepancies(
 
         service = AnalysisService(db)
 
-        # Optional: avoid stale wide cache if a window is specified
-        use_cache_for_analysis = use_cache and not (start_date or end_date)
-
+        # Always use cache for analysis (it respects start/end date filtering)
+        # The analysis service will filter drains by the date range we provide
         analyses = service.analyze_all_cauldrons(
-            start=start_date,
-            end=end_date,
-            use_cache=use_cache_for_analysis
+            start=start_dt,
+            end=end_dt,
+            use_cache=use_cache
         )
 
         drains: List[DrainEventDto] = []
         for _, ca in analyses.items():
-            drains.extend(ca.drain_events)
+            # Additional safety: filter drains by date range if specified
+            if start_dt or end_dt:
+                filtered_drains = []
+                for drain in ca.drain_events:
+                    try:
+                        drain_date = datetime.fromisoformat(drain.start_time.replace('Z', '+00:00')).date()
+                        if start_dt and drain_date < start_dt.date():
+                            continue
+                        if end_dt and drain_date > end_dt.date():
+                            continue
+                        filtered_drains.append(drain)
+                    except (ValueError, AttributeError):
+                        # If we can't parse the date, include it (safer)
+                        filtered_drains.append(drain)
+                drains.extend(filtered_drains)
+            else:
+                drains.extend(ca.drain_events)
 
         result = reconcile_from_live(tickets_dto, drains)
-        _set_last_discrepancies(result)
+        
+        # Filter discrepancies to the specified date range
+        if start_dt or end_dt:
+            before_count = len(result.discrepancies)
+            start_date_obj = start_dt.date() if start_dt else None
+            end_date_obj = end_dt.date() if end_dt else None
+            
+            print(f"🔍 Filtering {before_count} discrepancies to date range: {start_date_obj} to {end_date_obj}")
+            
+            filtered_discrepancies = []
+            skipped_count = 0
+            for d in result.discrepancies:
+                if not d.date:
+                    skipped_count += 1
+                    continue
+                try:
+                    # Handle different date formats
+                    disc_date_str = d.date
+                    if 'T' in disc_date_str:
+                        disc_date_str = disc_date_str.split('T')[0]
+                    disc_date = datetime.strptime(disc_date_str, "%Y-%m-%d").date()
+                    
+                    # Check if date is within range
+                    if start_date_obj and disc_date < start_date_obj:
+                        skipped_count += 1
+                        continue
+                    if end_date_obj and disc_date > end_date_obj:
+                        skipped_count += 1
+                        continue
+                    filtered_discrepancies.append(d)
+                except (ValueError, TypeError) as e:
+                    # Skip discrepancies with invalid dates
+                    print(f"⚠️  Skipping discrepancy with invalid date format: {d.date} (error: {e})")
+                    skipped_count += 1
+                    continue
+            
+            result.discrepancies = filtered_discrepancies
+            # Recalculate counts after filtering
+            result.total_discrepancies = len(result.discrepancies)
+            result.critical_count = sum(1 for d in result.discrepancies if d.severity == "critical")
+            result.warning_count = sum(1 for d in result.discrepancies if d.severity == "warning")
+            result.info_count = sum(1 for d in result.discrepancies if d.severity == "info")
+            
+            if start_date_obj == end_date_obj:
+                print(f"   Filtered to exact date {start_date_obj}: {before_count} -> {result.total_discrepancies} discrepancies")
+            else:
+                print(f"   Filtered to date range {start_date_obj} to {end_date_obj}: {before_count} -> {result.total_discrepancies} discrepancies")
+        
+        _set_last_discrepancies(result, start_dt, end_dt)
+        print(f"✅ Detection complete: {result.total_discrepancies} discrepancies found")
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -645,24 +964,74 @@ async def detect_discrepancies(
 async def get_discrepancies(
     severity: Optional[str] = None,   # "critical" | "warning" | "info"
     cauldron_id: Optional[str] = None,
-    db: Session = Depends(get_db)     # kept for symmetry; not used here
+    start_date: Optional[str] = None,  # YYYY-MM-DD format
+    end_date: Optional[str] = None,    # YYYY-MM-DD format
+    db: Session = Depends(get_db)
 ):
     """
-    Return the most recent discrepancy run (from POST /api/discrepancies/detect),
-    optionally filtered by severity and/or cauldron_id.
+    Return cached discrepancy results, optionally filtered by severity, cauldron_id, and/or date range.
+    If no cache exists for the specified date range, returns 404.
     """
-    last = _get_last_discrepancies()
+    from datetime import datetime as dt, timedelta
+    
+    # Parse date range for cache lookup
+    start_dt = dt.strptime(start_date, "%Y-%m-%d") if start_date else None
+    end_dt = dt.strptime(end_date, "%Y-%m-%d") if end_date else None
+    
+    last = _get_last_discrepancies(start_dt, end_dt)
     if not last:
-        raise HTTPException(status_code=404, detail="No discrepancies cached yet. Run POST /api/discrepancies/detect first.")
+        # Auto-detect if no cache exists (convenience feature)
+        print(f"⚠️  No cache for date range {start_date} to {end_date}, auto-detecting...")
+        try:
+            # Call detect internally and get results
+            result = await detect_discrepancies(start_date=start_date, end_date=end_date, db=db, use_cache=True)
+            # Use the detected result as if it came from cache (will apply filters below)
+            last = result
+        except Exception as e:
+            # If detection fails, return 404
+            raise HTTPException(status_code=404, detail=f"No discrepancies cached for date range {start_date} to {end_date} and detection failed: {str(e)}")
 
     if severity and severity not in {"critical", "warning", "info"}:
         raise HTTPException(status_code=400, detail="Invalid severity. Use one of: critical, warning, info.")
 
     items = last.discrepancies
+    
+    # Apply filters
     if severity:
         items = [d for d in items if d.severity == severity]
     if cauldron_id:
         items = [d for d in items if d.cauldron_id == cauldron_id]
+    
+    # Filter by date range
+    if start_date or end_date:
+        print(f"📅 Filtering discrepancies: start={start_date}, end={end_date}")
+        before_count = len(items)
+        
+        if start_date and end_date and start_date == end_date:
+            # Special case: when start and end are the same, filter to exact date only
+            exact_date = dt.strptime(start_date, "%Y-%m-%d").date()
+            items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() == exact_date]
+            print(f"   After exact date filter ({exact_date}): {before_count} -> {len(items)} items")
+        else:
+            # Normal range filtering
+            if start_date:
+                start_dt = dt.strptime(start_date, "%Y-%m-%d").date()
+                items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() >= start_dt]
+                print(f"   After start_date filter: {before_count} -> {len(items)} items")
+                before_count = len(items)  # Update for next filter
+            
+            if end_date:
+                end_dt = dt.strptime(end_date, "%Y-%m-%d").date()
+                items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() <= end_dt]
+                print(f"   After end_date filter: {before_count} -> {len(items)} items")
+    else:
+        # Default: last 7 days to avoid showing old/stale data with 0 values
+        today = dt.now().date()
+        week_ago = today - timedelta(days=7)
+        print(f"📅 No date range provided, defaulting to last 7 days: {week_ago} to {today}")
+        before_count = len(items)
+        items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() >= week_ago]
+        print(f"   After 7-day filter: {before_count} -> {len(items)} items")
 
     def _count(level: str) -> int:
         return sum(1 for d in items if d.severity == level)
@@ -965,7 +1334,10 @@ async def periodic_update():
                         
                         if tickets_dto.transport_tickets and drains:
                             result = reconcile_from_live(tickets_dto, drains)
-                            _set_last_discrepancies(result)
+                            # Pass date range for last 24 hours
+                            start_time_dt = datetime.now() - timedelta(hours=24)
+                            end_time_dt = datetime.now()
+                            _set_last_discrepancies(result, start_time_dt, end_time_dt)
                             
                             # Check for new discrepancies
                             global _LAST_DISCREPANCY_IDS
@@ -1014,6 +1386,258 @@ async def periodic_update():
         except Exception as e:
             print(f"❌ Fatal error in background updater: {e}")
             await asyncio.sleep(60)  # Wait before retrying
+
+
+# ==================== AI-Powered Insights Endpoints ====================
+
+# Initialize AI insights generator
+ai_insights = AIInsights()
+
+@app.get("/api/ai/summary")
+async def get_ai_summary(
+    time_range: str = "24 hours",
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Generate AI-powered executive summary of system status
+    
+    Analyzes discrepancies, cauldron status, and alerts to provide
+    natural language insights and recommendations.
+    """
+    try:
+        client = CachedEOGClient(db)
+        
+        # Fetch recent discrepancies (last 24 hours by default)
+        from datetime import timedelta
+        end_date = datetime.now()
+        start_date = end_date - timedelta(hours=24)
+        
+        # Get discrepancies
+        tickets_dto = client.get_tickets(use_cache=use_cache)
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(start=start_date, end=end_date, use_cache=use_cache)
+        
+        drains = []
+        for _, ca in analyses.items():
+            drains.extend(ca.drain_events)
+        
+        discrepancies_result = reconcile_from_live(tickets_dto, drains)
+        discrepancies = [d.model_dump() for d in discrepancies_result.discrepancies]
+        
+        # Get cauldron statuses
+        cauldrons = client.get_cauldrons(use_cache=use_cache)
+        cauldrons_data = [c.model_dump() for c in cauldrons]
+        
+        # Get latest levels for cauldron percentages
+        latest_levels = client.get_latest_levels(use_cache=use_cache)
+        cauldron_map = {c.id: c for c in cauldrons}
+        for level_data in latest_levels:
+            cauldron = cauldron_map.get(level_data.cauldron_id)
+            if cauldron:
+                for c in cauldrons_data:
+                    if c['id'] == cauldron.id:
+                        c['level'] = round((level_data.level / cauldron.max_volume) * 100, 1)
+                        break
+        
+        # Get recent alerts (mock for now - could fetch from store)
+        recent_alerts = []
+        
+        # Generate AI summary
+        summary = await ai_insights.generate_executive_summary(
+            discrepancies=discrepancies,
+            cauldrons=cauldrons_data,
+            recent_alerts=recent_alerts,
+            time_range=time_range
+        )
+        
+        return summary
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error generating AI summary: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/optimization-plan")
+async def get_ai_optimization_plan(
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Generate AI-powered optimization plan for witch allocation
+    
+    Analyzes current operations and provides recommendations for
+    reducing witch count while maintaining coverage.
+    """
+    try:
+        client = CachedEOGClient(db, cache_ttl_minutes=30)
+        
+        # Get current forecast to determine minimum witches
+        cauldrons = client.get_cauldrons(use_cache=True)
+        couriers = client.get_couriers(use_cache=True)
+        network = client.get_network(use_cache=True)
+        market = client.get_market(use_cache=True)
+        
+        latest_data = client.get_latest_levels(use_cache=True)
+        latest_levels = {}
+        for point in latest_data:
+            cauldron_id = point.cauldron_id
+            if cauldron_id:
+                if cauldron_id not in latest_levels:
+                    latest_levels[cauldron_id] = point.level
+        
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(use_cache=True)
+        analyses_dict = {cauldron_id: analysis for cauldron_id, analysis in analyses.items()}
+        
+        forecast_service = ForecastService(
+            cauldrons=cauldrons,
+            couriers=couriers,
+            network=network,
+            market=market,
+            analyses=analyses_dict,
+            latest_levels=latest_levels
+        )
+        
+        forecast_result = forecast_service.calculate_minimum_witches(
+            safety_margin_percent=0.9,
+            unload_time_minutes=15.0
+        )
+        
+        current_witches = len(couriers)  # Assume all couriers are active
+        
+        # Prepare cauldron data with fill rates
+        cauldrons_data = []
+        for c in cauldrons:
+            analysis = analyses_dict.get(c.id)
+            fill_rate = analysis.fill_rate if analysis else 0.0
+            level = latest_levels.get(c.id, 0)
+            percentage = round((level / c.max_volume) * 100, 1) if c.max_volume > 0 else 0
+            
+            cauldrons_data.append({
+                'id': c.id,
+                'name': c.name,
+                'fill_rate': fill_rate,
+                'level': percentage,
+                'capacity': c.max_volume
+            })
+        
+        network_data = network.model_dump() if hasattr(network, 'model_dump') else {
+            'edges': [e.model_dump() if hasattr(e, 'model_dump') else e for e in network.edges]
+        }
+        
+        # Generate optimization plan
+        plan = await ai_insights.generate_optimization_plan(
+            current_witches=current_witches,
+            cauldrons=cauldrons_data,
+            network=network_data,
+            forecast_result=forecast_result
+        )
+        
+        return plan
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error generating optimization plan: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/fraud-analysis")
+async def get_ai_fraud_analysis(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Generate AI-powered fraud risk analysis
+    
+    Analyzes discrepancies and tickets to identify suspicious patterns
+    and prioritize investigations.
+    """
+    try:
+        from datetime import datetime as dt
+        
+        # Parse date range
+        start_dt = dt.strptime(start_date, "%Y-%m-%d") if start_date else None
+        end_dt = dt.strptime(end_date, "%Y-%m-%d") if end_date else None
+        
+        client = CachedEOGClient(db)
+        
+        # Get tickets
+        tickets_dto = client.get_tickets(use_cache=use_cache)
+        tickets_data = [t.model_dump() for t in tickets_dto.transport_tickets]
+        
+        # Get discrepancies
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(
+            start=start_dt,
+            end=end_dt,
+            use_cache=use_cache
+        )
+        
+        drains = []
+        for _, ca in analyses.items():
+            drains.extend(ca.drain_events)
+        
+        discrepancies_result = reconcile_from_live(tickets_dto, drains)
+        discrepancies = [d.model_dump() for d in discrepancies_result.discrepancies]
+        
+        # Get couriers
+        couriers = client.get_couriers(use_cache=use_cache)
+        couriers_data = [c.model_dump() for c in couriers]
+        
+        # Generate fraud analysis
+        analysis = await ai_insights.generate_fraud_analysis(
+            discrepancies=discrepancies,
+            tickets=tickets_data,
+            couriers=couriers_data
+        )
+        
+        return analysis
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error generating fraud analysis: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ai/explain")
+async def explain_component(
+    request: Dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate contextual AI explanation for a specific component
+    
+    Provides explanation of what a graph/chart/table is showing and how to interpret it.
+    """
+    try:
+        from pydantic import BaseModel
+        
+        class ExplainRequest(BaseModel):
+            component_name: str
+            data: Dict
+        
+        req = ExplainRequest(**request)
+        
+        # Generate explanation using AI
+        explanation = await ai_insights.explain_component(
+            component_name=req.component_name,
+            component_data=req.data
+        )
+        
+        return explanation
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error generating component explanation: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
