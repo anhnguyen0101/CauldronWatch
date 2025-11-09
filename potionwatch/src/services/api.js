@@ -122,11 +122,13 @@ export async function fetchDrainEvents(cauldronId, date = null) {
 }
 
 // Fetch discrepancies (Person 3)
-export async function fetchDiscrepancies(severity = null, cauldronId = null) {
+export async function fetchDiscrepancies(severity = null, cauldronId = null, startDate = null, endDate = null) {
   // Build params object (used in both initial request and retry)
   const params = {}
   if (severity) params.severity = severity
   if (cauldronId) params.cauldron_id = cauldronId
+  if (startDate) params.start_date = startDate
+  if (endDate) params.end_date = endDate
 
   try {
     const response = await api.get('/api/discrepancies', { params })
@@ -137,7 +139,10 @@ export async function fetchDiscrepancies(severity = null, cauldronId = null) {
     if (error.response?.status === 404) {
       console.log('No cached discrepancies, running detection...')
       try {
-        await api.post('/api/discrepancies/detect')
+        const detectParams = {}
+        if (startDate) detectParams.start_date = startDate
+        if (endDate) detectParams.end_date = endDate
+        await api.post('/api/discrepancies/detect', null, { params: detectParams })
         // Retry fetching with same params
         const retryResponse = await api.get('/api/discrepancies', { params })
         return retryResponse.data
@@ -151,16 +156,16 @@ export async function fetchDiscrepancies(severity = null, cauldronId = null) {
 }
 
 // Detect discrepancies (Person 3) - triggers detection and returns results
-export async function detectDiscrepancies(window = null) {
+export async function detectDiscrepancies(startDate = null, endDate = null) {
   try {
     const params = {}
-
-    // window is expected like: { start_time: 'ISO', end_time: 'ISO' }
-    if (window?.start_time) {
-      params.start_date = window.start_time
+    
+    // Accept date strings directly (YYYY-MM-DD format)
+    if (startDate) {
+      params.start_date = startDate
     }
-    if (window?.end_time) {
-      params.end_date = window.end_time
+    if (endDate) {
+      params.end_date = endDate
     }
 
     console.log('📨 POST /api/discrepancies/detect', params)
