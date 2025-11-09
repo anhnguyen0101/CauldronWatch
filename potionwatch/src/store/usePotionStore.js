@@ -186,7 +186,7 @@ const usePotionStore = create((set, get) => ({
     }))
   },
 
-  getCachedDiscrepancies: (dateRange, maxAgeMs = 5 * 60 * 1000) => { // 5 min default
+  getCachedDiscrepancies: (dateRange, maxAgeMs = 60 * 60 * 1000) => { // 1 hour default (increased from 5 min)
     const state = get()
     const cached = state.cachedDiscrepancies[dateRange]
     if (cached && (Date.now() - cached.timestamp) < maxAgeMs) {

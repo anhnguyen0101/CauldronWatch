@@ -12,6 +12,7 @@ export default function Discrepancies(){
   const [filterCauldron, setFilterCauldron] = useState(null)
   const [timeRange, setTimeRange] = useState('7d') // Default: 7 days
   const [lastFetchTime, setLastFetchTime] = useState(null)
+  const [currentDateRangeKey, setCurrentDateRangeKey] = useState(null) // Track current cache key
 
   // Calculate date range based on selected timeRange
   const getDateRange = React.useCallback((range) => {
@@ -57,18 +58,20 @@ export default function Discrepancies(){
         const { startDate, endDate } = getDateRange(timeRange)
         const dateRangeKey = `${startDate}_${endDate}`
         
-        // Check store cache first (persists across navigation)
+        // OPTIMIZATION: Check store cache first (persists across navigation) - increased cache duration to 1 hour
         const store = usePotionStore.getState()
-        const cached = store.getCachedDiscrepancies(dateRangeKey, 5 * 60 * 1000) // 5 min cache
+        const cached = store.getCachedDiscrepancies(dateRangeKey, 60 * 60 * 1000) // 1 hour cache
         
-        if (cached) {
-          console.log(`✅ Using cached discrepancies for ${timeRange} (from store)`)
+        if (cached !== null) {
+          console.log(`✅ Using cached discrepancies for ${timeRange} (from store, ${cached.length} items)`)
           setAllDiscrepancies(cached)
+          setCurrentDateRangeKey(dateRangeKey)
           setLastFetchTime(new Date())
           setLoading(false)
           return
         }
         
+        // Show loading only if we don't have cached data
         setLoading(true)
         console.log(`🔍 Loading discrepancies for ${timeRange} (${startDate} to ${endDate})...`)
         
@@ -78,9 +81,10 @@ export default function Discrepancies(){
         
         const discrepancies = detectResult.discrepancies || []
         setAllDiscrepancies(discrepancies)
+        setCurrentDateRangeKey(dateRangeKey)
         setLastFetchTime(new Date())
         
-        // Cache in store for cross-page navigation
+        // Cache in store for cross-page navigation (1 hour cache)
         store.setCachedDiscrepancies(dateRangeKey, discrepancies)
         
         setLoading(false)
@@ -89,13 +93,14 @@ export default function Discrepancies(){
         // On error, try to fetch cached results as fallback
         try {
           const { startDate, endDate } = getDateRange(timeRange)
+          const dateRangeKey = `${startDate}_${endDate}`
           const result = await fetchDiscrepancies(null, null, startDate, endDate)
           const discrepancies = result.discrepancies || []
           setAllDiscrepancies(discrepancies)
+          setCurrentDateRangeKey(dateRangeKey)
           setLastFetchTime(new Date())
           
           // Cache in store even on fallback
-          const dateRangeKey = `${startDate}_${endDate}`
           usePotionStore.getState().setCachedDiscrepancies(dateRangeKey, discrepancies)
         } catch (fetchError) {
           setAllDiscrepancies([])
@@ -105,7 +110,7 @@ export default function Discrepancies(){
     }
     
     loadDiscrepancies()
-  }, [timeRange, getDateRange]) // Re-fetch when time range changes
+  }, [timeRange, getDateRange]) // Only re-fetch when time range changes
 
   // Filter discrepancies client-side (no API call)
   const filteredDiscrepancies = useMemo(() => {
@@ -135,13 +140,16 @@ export default function Discrepancies(){
     return { total, critical, warning, info }
   }, [filteredDiscrepancies])
 
-  // Manual refresh function
+  // Manual refresh function (force refresh, bypass cache)
   const handleRefresh = async () => {
     try {
       setLoading(true)
       const { startDate, endDate } = getDateRange(timeRange)
-      console.log(`🔄 Refreshing discrepancies for ${timeRange}...`)
+      const dateRangeKey = `${startDate}_${endDate}`
+      console.log(`🔄 Refreshing discrepancies for ${timeRange} (forcing new fetch)...`)
       
+      // Clear cache for this date range to force fresh fetch
+      const store = usePotionStore.getState()
       const detectResult = await detectDiscrepancies(startDate, endDate)
       console.log('✅ Detection complete:', detectResult)
       
@@ -150,11 +158,11 @@ export default function Discrepancies(){
       
       const discrepancies = result.discrepancies || []
       setAllDiscrepancies(discrepancies)
+      setCurrentDateRangeKey(dateRangeKey)
       setLastFetchTime(new Date())
       
-      // Update cache
-      const dateRangeKey = `${startDate}_${endDate}`
-      usePotionStore.getState().setCachedDiscrepancies(dateRangeKey, discrepancies)
+      // Update cache with fresh data
+      store.setCachedDiscrepancies(dateRangeKey, discrepancies)
     } catch (error) {
       console.error('❌ Error refreshing discrepancies:', error)
     } finally {

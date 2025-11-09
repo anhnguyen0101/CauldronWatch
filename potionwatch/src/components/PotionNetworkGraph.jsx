@@ -309,6 +309,12 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
 
   // helper for edge color intensity
   const edgeColorByTime = (t) => {
+    // In light mode, use black for better visibility
+    if (!isDark) {
+      return '#000000' // Black for light mode
+    }
+    
+    // Dark mode: use color based on travel time
     if(t == null) return '#9ef6ff'
     // shorter time -> brighter
     const minutes = Number(t)
