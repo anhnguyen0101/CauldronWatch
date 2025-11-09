@@ -271,7 +271,7 @@ export default function Discrepancies() {
           <select
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}
-            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm"
+            className="px-3 py-2 bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark rounded-lg text-sm"
           >
             <option value="all">All</option>
             <option value="1d">Last 1 day</option>
@@ -281,7 +281,7 @@ export default function Discrepancies() {
           <select
             value={filterSeverity || ''}
             onChange={(e) => setFilterSeverity(e.target.value || null)}
-            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm"
+            className="px-3 py-2 bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark rounded-lg text-sm"
           >
             <option value="">All Severities</option>
             <option value="critical">Critical</option>
@@ -294,13 +294,13 @@ export default function Discrepancies() {
             placeholder="Filter by Cauldron ID..."
             value={filterCauldron || ''}
             onChange={(e) => setFilterCauldron(e.target.value || null)}
-            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm flex-1 min-w-[200px]"
+            className="px-3 py-2 bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark rounded-lg text-sm flex-1 min-w-[200px]"
           />
 
           <button
             onClick={handleRefresh}
             disabled={loading}
-            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-3 py-2 bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark rounded-lg text-sm hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             title="Run detection & refresh data"
           >
             <RefreshCw
@@ -311,7 +311,7 @@ export default function Discrepancies() {
           </button>
 
           {lastFetchTime && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-600 dark:text-gray-400">
               Last updated: {lastFetchTime.toLocaleTimeString()}
             </span>
           )}
@@ -322,7 +322,7 @@ export default function Discrepancies() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="panel-title">Discrepancies</h3>
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-gray-600 dark:text-gray-400">
             Showing {filteredDiscrepancies.length} of {allDiscrepancies.length}
           </span>
         </div>
@@ -337,7 +337,7 @@ export default function Discrepancies() {
           <div className="overflow-x-auto">
             <table className="w-full table-auto text-left">
               <thead>
-                <tr className="text-gray-400 text-sm border-b border-neutral-800">
+                <tr className="text-sm border-b border-border-light dark:border-border-dark text-gray-600 dark:text-gray-400">
                   <th className="px-3 py-2">Severity</th>
                   <th className="px-3 py-2">Cauldron</th>
                   <th className="px-3 py-2">Ticket ID</th>
@@ -352,7 +352,7 @@ export default function Discrepancies() {
                 {filteredDiscrepancies.map((d, idx) => (
                   <tr
                     key={`${d.ticket_id}_${idx}`}
-                    className="border-t border-neutral-800 hover:bg-neutral-800/50 transition-colors"
+                    className="border-t border-border-light dark:border-border-dark hover:bg-panel-light/50 dark:hover:bg-panel-dark/50 transition-colors"
                   >
                     <td className="px-3 py-3">
                       <div
@@ -361,26 +361,26 @@ export default function Discrepancies() {
                         )}`}
                       >
                         {getSeverityIcon(d.severity)}
-                        <span className="text-xs font-medium capitalize">
+                        <span className="text-xs font-medium capitalize text-text-light dark:text-text-dark">
                           {d.severity}
                         </span>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-gray-100 font-mono text-sm">
+                    <td className="px-3 py-3 text-text-light dark:text-text-dark font-mono text-sm">
                       {d.cauldron_id
                         ?.replace('cauldron_', '')
                         .toUpperCase() || d.cauldron_id}
                     </td>
-                    <td className="px-3 py-3 text-gray-300 font-mono text-xs">
+                    <td className="px-3 py-3 text-text-light/70 dark:text-text-dark/70 font-mono text-xs">
                       {d.ticket_id}
                     </td>
-                    <td className="px-3 py-3 text-gray-300 text-sm">
+                    <td className="px-3 py-3 text-text-light/70 dark:text-text-dark/70 text-sm">
                       {d.date || '-'}
                     </td>
-                    <td className="px-3 py-3 text-gray-100">
+                    <td className="px-3 py-3 text-text-light dark:text-text-dark">
                       {Math.round(d.ticket_volume || 0)} L
                     </td>
-                    <td className="px-3 py-3 text-gray-100">
+                    <td className="px-3 py-3 text-text-light dark:text-text-dark">
                       {Math.round(d.actual_drained || 0)} L
                     </td>
                     <td
