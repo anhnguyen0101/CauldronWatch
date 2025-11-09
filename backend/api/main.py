@@ -31,6 +31,8 @@ from backend.models.schemas import (
     DiscrepanciesDto,
     CauldronAnalysisDto,
     DailyDrainSummaryDto,
+    CombinedGraphDto,
+    GraphNodeDto,
 )
 from backend.api.analysis_service import AnalysisService
 
@@ -173,6 +175,59 @@ async def get_graph_neighbors(node_id: str, directed: bool = False, db: Session 
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/graph", response_model=CombinedGraphDto)
+async def get_combined_graph(db: Session = Depends(get_db), use_cache: bool = True):
+    """
+    Get combined network graph with nodes and edges
+    
+    Merges:
+    - Network edges (travel paths between nodes)
+    - Cauldrons (nodes with coordinates and capacity)
+    - Market (destination node)
+    
+    Returns a complete graph structure ready for visualization or route optimization.
+    """
+    try:
+        client = CachedEOGClient(db)
+        
+        # Fetch all components
+        network = client.get_network()
+        cauldrons = client.get_cauldrons(use_cache=use_cache)
+        market = client.get_market(use_cache=use_cache)
+        
+        # Build nodes list
+        nodes = []
+        
+        # Add all cauldrons as nodes
+        for cauldron in cauldrons:
+            nodes.append(GraphNodeDto(
+                id=cauldron.id,
+                name=cauldron.name,
+                latitude=cauldron.latitude,
+                longitude=cauldron.longitude,
+                max_volume=cauldron.max_volume,
+                node_type="cauldron"
+            ))
+        
+        # Add market as a node
+        nodes.append(GraphNodeDto(
+            id=market.id,
+            name=market.name,
+            latitude=market.latitude,
+            longitude=market.longitude,
+            description=market.description,
+            node_type="market"
+        ))
+        
+        return CombinedGraphDto(
+            nodes=nodes,
+            edges=network.edges,
+            description="Potion transport network linking all cauldrons to the market"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== Data Endpoints ====================
 
 @app.get("/api/data", response_model=List[HistoricalDataDto])
@@ -180,13 +235,40 @@ async def get_historical_data(
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
     cauldron_id: Optional[str] = None,
+    limit: Optional[int] = None,
     db: Session = Depends(get_db),
     use_cache: bool = True
 ):
-    """Get historical data for cauldrons"""
+    """Get historical data for cauldrons
+    
+    Args:
+        start: Start date (optional, defaults to 24 hours ago if not specified)
+        end: End date (optional, defaults to now)
+        cauldron_id: Filter by cauldron (optional)
+        limit: Maximum number of records to return (optional, default: 1000)
+    """
     try:
+        # If no date range specified, default to last 24 hours for performance
+        if start is None and end is None:
+            from datetime import timedelta
+            end = datetime.now()
+            start = end - timedelta(hours=24)
+            print(f"📊 No date range specified, defaulting to last 24 hours: {start} to {end}")
+        
         client = CachedEOGClient(db)
-        return client.get_data(start, end, cauldron_id, use_cache=use_cache)
+        data = client.get_data(start, end, cauldron_id, use_cache=use_cache)
+        
+        # Apply limit if specified
+        if limit and limit > 0:
+            # If we have more data than limit, sample evenly
+            if len(data) > limit:
+                step = len(data) // limit
+                data = data[::step][:limit]
+                print(f"📊 Limited results to {len(data)} records (sampled from {len(data) * step})")
+            else:
+                data = data[:limit]
+        
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

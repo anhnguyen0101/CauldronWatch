@@ -48,9 +48,22 @@ class EdgeDto(BaseModel):
 
 class NeighborDto(BaseModel):
     """Graph neighbor information"""
-    node_id: str
+    to: str = Field(alias="to")  # Target node ID
+    cost: Optional[str] = None  # Travel time as string (e.g., "00:45:00")
+    node_id: Optional[str] = None  # Alias for 'to' for backward compatibility
     distance: Optional[float] = None
     weight: Optional[float] = None
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_node_id(cls, data):
+        """Set node_id from 'to' field for backward compatibility"""
+        if isinstance(data, dict) and 'to' in data and 'node_id' not in data:
+            data['node_id'] = data['to']
+        return data
+    
+    class Config:
+        populate_by_name = True
 
 
 class NetworkDto(BaseModel):
@@ -66,6 +79,24 @@ class NetworkDto(BaseModel):
             nodes_set.add(edge.from_node)
             nodes_set.add(edge.to_node)
         return list(nodes_set)
+
+
+class GraphNodeDto(BaseModel):
+    """Graph node with full information"""
+    id: str
+    name: Optional[str] = None
+    latitude: float
+    longitude: float
+    max_volume: Optional[float] = None  # For cauldrons
+    description: Optional[str] = None  # For market
+    node_type: str  # "cauldron" | "market"
+
+
+class CombinedGraphDto(BaseModel):
+    """Combined network graph with nodes and edges - ready for visualization"""
+    nodes: List[GraphNodeDto]  # All nodes (cauldrons + market) with coordinates
+    edges: List[EdgeDto]  # All edges with travel times
+    description: Optional[str] = "Potion transport network linking all cauldrons to the market"
 
 
 class MarketDto(BaseModel):
