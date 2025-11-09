@@ -31,12 +31,12 @@ export default function Sidebar() {
   return (
     <aside className={`relative flex flex-col bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}>
       {/* Logo and Name Section */}
-      <div className="p-4 flex items-center justify-between border-b border-neutral-300 dark:border-neutral-800">
+      <div className="p-4 flex items-center justify-between border-b border-neutral-300 dark:border-neutral-800 gap-2">
         {!collapsed ? (
           <>
-            <div className="flex items-center gap-3 flex-1">
-              <img src={logo} alt="CauldronWatch logo" className="w-16 h-16 object-contain rounded-md" />
-              <div className="text-xl font-bold text-black dark:text-gray-200">CauldronWatch</div>
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <img src={logo} alt="CauldronWatch logo" className="w-12 h-12 object-contain rounded-md flex-shrink-0" />
+              <div className="text-lg font-bold text-black dark:text-gray-200 whitespace-nowrap truncate">FlowGuard AI</div>
             </div>
             <button
               aria-label="Collapse sidebar"
