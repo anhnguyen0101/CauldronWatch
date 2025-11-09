@@ -15,22 +15,33 @@ export default function Discrepancies(){
     async function loadDiscrepancies() {
       try {
         setLoading(true)
-        console.log('🔍 Loading all discrepancies from Person 3...')
+        console.log('🔍 Loading discrepancies (cached if already detected)...')
         
-        // First, try to detect discrepancies (this populates the cache)
-        const detectResult = await detectDiscrepancies()
-        console.log('✅ Detection complete:', detectResult)
-        
-        // Fetch ALL discrepancies (no filters) - this is the only API call
+        // Fetch discrepancies first (they might be cached from backend)
         const result = await fetchDiscrepancies(null, null)
-        console.log('📊 Fetched all discrepancies:', result.discrepancies?.length || 0, 'items')
+        console.log('📊 Fetched discrepancies:', result.discrepancies?.length || 0, 'items')
         
         setAllDiscrepancies(result.discrepancies || [])
         setLastFetchTime(new Date())
+        setLoading(false)
+        
+        // If no discrepancies found, try detection in background (don't block UI)
+        if (!result.discrepancies || result.discrepancies.length === 0) {
+          console.log('📊 No cached discrepancies, detecting in background...')
+          detectDiscrepancies().then(detectResult => {
+            console.log('✅ Background detection complete:', detectResult)
+            // Fetch again after detection
+            return fetchDiscrepancies(null, null)
+          }).then(refreshedResult => {
+            setAllDiscrepancies(refreshedResult.discrepancies || [])
+            setLastFetchTime(new Date())
+          }).catch(err => {
+            console.error('❌ Background detection error:', err)
+          })
+        }
       } catch (error) {
         console.error('❌ Error loading discrepancies:', error)
         setAllDiscrepancies([])
-      } finally {
         setLoading(false)
       }
     }
@@ -195,9 +206,16 @@ export default function Discrepancies(){
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="panel-title">Discrepancies</h3>
-          <span className="text-sm text-gray-400">
-            Showing {filteredDiscrepancies.length} of {allDiscrepancies.length}
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-400">
+              Showing {filteredDiscrepancies.length} of {allDiscrepancies.length}
+            </span>
+            {lastFetchTime && (
+              <span className="text-xs text-gray-500">
+                Last updated: {lastFetchTime.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
         </div>
         {filteredDiscrepancies.length === 0 ? (
           <div className="text-center py-8 text-gray-400">
@@ -234,18 +252,22 @@ export default function Discrepancies(){
                     </td>
                     <td className="px-3 py-3 text-gray-300 font-mono text-xs">{d.ticket_id}</td>
                     <td className="px-3 py-3 text-gray-300 text-sm">{d.date || '-'}</td>
-                    <td className="px-3 py-3 text-gray-100">{Math.round(d.ticket_volume || 0)} L</td>
-                    <td className="px-3 py-3 text-gray-100">{Math.round(d.actual_drained || 0)} L</td>
+                    <td className="px-3 py-3 text-gray-100" title={`Raw value: ${d.ticket_volume?.toFixed(2) || 0}L`}>
+                      {Math.round(d.ticket_volume || 0)} L
+                    </td>
+                    <td className="px-3 py-3 text-gray-100" title={`Raw value: ${d.actual_drained?.toFixed(2) || 0}L`}>
+                      {Math.round(d.actual_drained || 0)} L
+                    </td>
                     <td className={`px-3 py-3 font-semibold ${
                       (d.discrepancy || 0) > 0 ? 'text-green-400' : 
                       (d.discrepancy || 0) < 0 ? 'text-red-400' : 'text-gray-400'
-                    }`}>
+                    }`} title={`Raw difference: ${(d.discrepancy || 0).toFixed(2)}L`}>
                       {(d.discrepancy || 0) > 0 ? '+' : ''}{Math.round(d.discrepancy || 0)} L
                     </td>
                     <td className={`px-3 py-3 font-semibold ${
                       Math.abs(d.discrepancy_percent || 0) > 20 ? 'text-red-400' : 
                       Math.abs(d.discrepancy_percent || 0) > 5 ? 'text-yellow-400' : 'text-gray-400'
-                    }`}>
+                    }`} title={`Calculation: abs(${(d.discrepancy || 0).toFixed(2)}) / max(${(d.ticket_volume || 0).toFixed(2)}, ${(d.actual_drained || 0).toFixed(2)}, 1.0) * 100 = ${(d.discrepancy_percent || 0).toFixed(2)}%`}>
                       {Math.abs(d.discrepancy_percent || 0).toFixed(1)}%
                     </td>
                   </tr>

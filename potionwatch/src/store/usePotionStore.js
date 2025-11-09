@@ -142,12 +142,27 @@ const usePotionStore = create((set, get) => ({
   pushHistorySnapshot: (snapshot) => {
     console.log(`📜 pushHistorySnapshot called:`, {
       time: snapshot.time,
+      timestamp: snapshot.timestamp,
       hasCauldrons: !!snapshot.cauldrons,
       cauldronsCount: snapshot.cauldrons?.length || 0,
-      avgLevel: snapshot.avgLevel,
-      snapshot: snapshot
+      avgLevel: snapshot.avgLevel
     })
     set(state => {
+      // Check for duplicates based on timestamp (within 1 second tolerance)
+      const snapshotTime = snapshot.timestamp ? new Date(snapshot.timestamp).getTime() : null
+      if (snapshotTime) {
+        const isDuplicate = state.history.some(existing => {
+          const existingTime = existing.timestamp ? new Date(existing.timestamp).getTime() : null
+          if (!existingTime) return false
+          // Consider duplicates if within 1 second
+          return Math.abs(existingTime - snapshotTime) < 1000
+        })
+        if (isDuplicate) {
+          console.log(`  ⚠️  Duplicate snapshot detected (timestamp: ${snapshot.timestamp}), skipping`)
+          return state
+        }
+      }
+      
       const newHistory = [...state.history, snapshot].slice(-500)
       console.log(`  📜 History now has ${newHistory.length} snapshots`)
       return { history: newHistory }

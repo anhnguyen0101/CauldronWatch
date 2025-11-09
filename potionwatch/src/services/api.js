@@ -206,3 +206,33 @@ export async function fetchMarket() {
     return null
   }
 }
+
+// Forecast endpoints
+export async function fetchMinimumWitches(safetyMarginPercent = 0.9, unloadTimeMinutes = 15) {
+  try {
+    const response = await api.get('/api/forecast/minimum-witches', {
+      params: {
+        safety_margin_percent: safetyMarginPercent,
+        unload_time_minutes: unloadTimeMinutes
+      }
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching minimum witches:', error)
+    return { minimum_witches: 0, schedule: [], cauldrons_serviced: 0, total_cauldrons: 0, verification: {} }
+  }
+}
+
+export async function fetchDailySchedule(targetDate = null) {
+  try {
+    const params = {}
+    if (targetDate) {
+      params.target_date = targetDate
+    }
+    const response = await api.get('/api/forecast/daily-schedule', { params })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching daily schedule:', error)
+    return { date: null, minimum_witches: 0, schedules: [], total_tasks: 0, repeating: false }
+  }
+}

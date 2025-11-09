@@ -299,7 +299,9 @@ export default function TimelineHeatmap({ onCellClick } = {}){
                         >
                           <div className="text-[10px] font-medium">{c.name}</div>
                           <div className="text-sm font-semibold mt-1">{fill}%</div>
-                          <div className="text-[10px] text-neutral-200 mt-1">{drain}L</div>
+                          {drain > 0 && (
+                            <div className="text-[10px] text-neutral-200 mt-1">{drain}L</div>
+                          )}
                           {alertCount > 0 && (
                             <motion.div
                               initial={{ scale: 0.8, opacity: 0 }}

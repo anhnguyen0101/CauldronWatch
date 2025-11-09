@@ -5,7 +5,9 @@ import usePotionStore from '../store/usePotionStore'
 
 export default function useInit(){
   useEffect(()=>{
-    // Check backend health first
+    console.log('🚀 Initializing application...')
+    
+    // Check backend health first (non-blocking)
     checkBackendHealth().then(isHealthy => {
       if (!isHealthy) {
         console.error('❌ Backend is not available. Please start the backend server.')
@@ -19,7 +21,7 @@ export default function useInit(){
       return
     })
 
-    // Load initial cauldrons
+    // Load initial cauldrons immediately
     fetchCauldrons().then(cauldrons => {
       console.log('📦 Fetched cauldrons from backend:', cauldrons.length)
       // Transform backend format to frontend format
@@ -148,24 +150,24 @@ export default function useInit(){
             console.log(`📊 All cauldron levels:`, store.cauldrons.map(c => `${c.id}: ${c.level || 0}%`))
           }
           
-          // Load network and market data (parallel) so the graph can render live edges
-          // Then load initial history AFTER cauldrons and levels are loaded
-          try {
-            const [networkData, marketData] = await Promise.all([fetchNetwork(), fetchMarket()])
-            if (networkData && Array.isArray(networkData.edges)) {
-              usePotionStore.getState().setLinks(networkData.edges)
-              console.log(`🌐 Loaded ${networkData.edges.length} network edges`)
-            }
-            if (marketData) {
-              usePotionStore.getState().setMarket(marketData)
-              console.log('🏪 Loaded market data:', marketData)
-            }
-          } catch (e) {
-            console.warn('Unable to load network/market at boot:', e)
-          }
+          // Load network and market data in parallel (non-critical, don't block)
+          // Don't await these - let them load in background
+          Promise.all([fetchNetwork(), fetchMarket()])
+            .then(([networkData, marketData]) => {
+              if (networkData && Array.isArray(networkData.edges)) {
+                usePotionStore.getState().setLinks(networkData.edges)
+                console.log(`🌐 Loaded ${networkData.edges.length} network edges`)
+              }
+              if (marketData) {
+                usePotionStore.getState().setMarket(marketData)
+                console.log('🏪 Loaded market data:', marketData)
+              }
+            })
+            .catch(e => console.warn('Unable to load network/market at boot:', e))
 
-          // This ensures history snapshots can reference the loaded cauldrons
-          return fetchHistory()
+          // Skip initial history load - TimelineHeatmap will load it when needed
+          console.log('✅ Core data loaded. Timeline and other components will load their data lazily.')
+          return Promise.resolve([])
         } else {
           console.warn('⚠️  No levels data received from backend (empty array)')
           return Promise.resolve([])

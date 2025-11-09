@@ -15,6 +15,7 @@ from threading import Lock
 from backend.api.reconcile_service import reconcile_from_live
 from backend.api.cached_eog_client import CachedEOGClient
 from backend.api.websocket import ws_manager
+from backend.api.forecast_service import ForecastService
 from backend.database.db import init_db, get_db
 from backend.models.schemas import (
     CauldronDto,
@@ -409,6 +410,179 @@ async def get_daily_drain_summary(
         import traceback
         error_detail = f"{str(e)}\n{traceback.format_exc()}"
         print(f"❌ Error in get_daily_drain_summary: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Forecast Endpoints ====================
+
+@app.get("/api/forecast/minimum-witches")
+async def get_minimum_witches(
+    safety_margin_percent: float = 0.9,
+    unload_time_minutes: float = 15.0,
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Calculate minimum number of witches needed to prevent all cauldrons from overflowing forever
+    
+    Creates a repeating daily schedule that works indefinitely
+    
+    Args:
+        safety_margin_percent: Safety margin (0.9 = service at 90% full, default: 0.9)
+        unload_time_minutes: Time to unload at market (default: 15 minutes)
+        use_cache: Whether to use cached data
+    
+    Returns:
+        Dict with minimum_witches, schedule, and verification
+    """
+    try:
+        client = CachedEOGClient(db)
+        
+        # Fetch all required data
+        cauldrons = client.get_cauldrons(use_cache=use_cache)
+        couriers = client.get_couriers(use_cache=use_cache)
+        network = client.get_network(use_cache=use_cache)
+        market = client.get_market(use_cache=use_cache)
+        
+        # Get latest levels
+        latest_data = client.get_latest_levels(use_cache=use_cache)
+        latest_levels = {}
+        for point in latest_data:
+            cauldron_id = point.cauldron_id
+            if cauldron_id:
+                # Keep the most recent level for each cauldron
+                if cauldron_id not in latest_levels:
+                    latest_levels[cauldron_id] = point.level
+                else:
+                    # Compare timestamps to keep latest
+                    if hasattr(point, 'timestamp') and point.timestamp:
+                        # Check if this timestamp is newer
+                        existing_timestamp = latest_levels.get(f"{cauldron_id}_timestamp")
+                        if not existing_timestamp or point.timestamp > existing_timestamp:
+                            latest_levels[cauldron_id] = point.level
+                            latest_levels[f"{cauldron_id}_timestamp"] = point.timestamp
+        
+        # Clean up timestamp keys from latest_levels
+        latest_levels_clean = {k: v for k, v in latest_levels.items() if not k.endswith("_timestamp")}
+        
+        # Get analyses (contains fill_rate)
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(use_cache=use_cache)
+        
+        # Convert analyses to dict format expected by ForecastService
+        analyses_dict = {}
+        for cauldron_id, analysis in analyses.items():
+            analyses_dict[cauldron_id] = analysis
+        
+        # Create forecast service
+        forecast_service = ForecastService(
+            cauldrons=cauldrons,
+            couriers=couriers,
+            network=network,
+            market=market,
+            analyses=analyses_dict,
+            latest_levels=latest_levels_clean
+        )
+        
+        # Calculate minimum witches
+        result = forecast_service.calculate_minimum_witches(
+            safety_margin_percent=safety_margin_percent,
+            unload_time_minutes=unload_time_minutes
+        )
+        
+        return result
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error in get_minimum_witches: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/forecast/daily-schedule")
+async def get_daily_schedule(
+    target_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Generate a full daily repeating schedule for all witches
+    
+    This schedule repeats every day and prevents overflow forever
+    
+    Args:
+        target_date: Date to generate schedule for in YYYY-MM-DD format (default: today)
+        use_cache: Whether to use cached data
+    
+    Returns:
+        Dict with daily schedule for each witch (repeating schedule)
+    """
+    try:
+        client = CachedEOGClient(db)
+        
+        # Fetch all required data
+        cauldrons = client.get_cauldrons(use_cache=use_cache)
+        couriers = client.get_couriers(use_cache=use_cache)
+        network = client.get_network(use_cache=use_cache)
+        market = client.get_market(use_cache=use_cache)
+        
+        # Get latest levels
+        latest_data = client.get_latest_levels(use_cache=use_cache)
+        latest_levels = {}
+        for point in latest_data:
+            cauldron_id = point.cauldron_id
+            if cauldron_id:
+                # Keep the most recent level for each cauldron
+                if cauldron_id not in latest_levels:
+                    latest_levels[cauldron_id] = point.level
+                else:
+                    # Compare timestamps to keep latest
+                    if hasattr(point, 'timestamp') and point.timestamp:
+                        # Check if this timestamp is newer
+                        existing_timestamp = latest_levels.get(f"{cauldron_id}_timestamp")
+                        if not existing_timestamp or point.timestamp > existing_timestamp:
+                            latest_levels[cauldron_id] = point.level
+                            latest_levels[f"{cauldron_id}_timestamp"] = point.timestamp
+        
+        # Clean up timestamp keys from latest_levels
+        latest_levels_clean = {k: v for k, v in latest_levels.items() if not k.endswith("_timestamp")}
+        
+        # Get analyses
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(use_cache=use_cache)
+        analyses_dict = {}
+        for cauldron_id, analysis in analyses.items():
+            analyses_dict[cauldron_id] = analysis
+        
+        # Parse target_date
+        parsed_date = None
+        if target_date:
+            try:
+                parsed_date = datetime.strptime(target_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid date format. Use YYYY-MM-DD")
+        
+        # Create forecast service
+        forecast_service = ForecastService(
+            cauldrons=cauldrons,
+            couriers=couriers,
+            network=network,
+            market=market,
+            analyses=analyses_dict,
+            latest_levels=latest_levels_clean
+        )
+        
+        # Generate daily schedule
+        result = forecast_service.generate_daily_schedule(
+            target_date=parsed_date
+        )
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error in get_daily_schedule: {error_detail}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
