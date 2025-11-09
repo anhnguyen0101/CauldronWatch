@@ -369,10 +369,33 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
 
           {/* shipment links to market (if market node exists) */}
           <g>
-            {nodes.map((n, idx) => {
-              if(!n.isMarket) return null
-              return null
-            })}
+            {(() => {
+              const marketNode = nodes.find(n => n.isMarket)
+              if (!marketNode) return null
+              const pm = pos(marketNode)
+              return nodes.filter(n => !n.isMarket).map((src, i) => {
+                const pa = pos(src)
+                const pb = pm
+                const mx = (pa.x + pb.x)/2
+                const my = (pa.y + pb.y)/2
+                const dx = pb.x - pa.x
+                const dy = pb.y - pa.y
+                const cx = mx - dy * 0.06
+                const cy = my + dx * 0.04
+                const d = `M ${pa.x} ${pa.y} Q ${cx} ${cy} ${pb.x} ${pb.y}`
+                // Darker, muted stroke for market routes but keep a soft glow so they remain visible on light backgrounds
+                const stroke = isDark ? '#0b7185' : '#0f3a3a'
+                return (
+                  <g key={`mroute-${i}`}>
+                    <path d={d} fill="none" stroke={stroke} strokeWidth={1.4} strokeOpacity={isDark ? 0.9 : 0.6} style={{filter: 'url(#glow)'}} />
+                    {/* subtle animated hint */}
+                    <path d={d} fill="none" stroke={stroke} strokeWidth={1.2} strokeOpacity={0.85} strokeDasharray={`6 12`} strokeLinecap="round">
+                      <animate attributeName="stroke-dashoffset" from="0" to="-40" dur="4s" repeatCount="indefinite" />
+                    </path>
+                  </g>
+                )
+              })
+            })()}
           </g>
 
           {/* nodes */}
@@ -398,12 +421,15 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
                    onMouseLeave={()=> setHover(null)}>
 
                   {isMarket ? (
-                    <g>
-                      <circle r={nodeRadius*1.4} fill="#facc15" opacity={0.12} style={{filter: 'url(#marketGlow)'}} />
-                      <circle r={nodeRadius} fill="#ffd36b" stroke="#5a3c00" strokeWidth={1} />
-                      <text x={0} y={nodeRadius*1.85} textAnchor="middle" fontSize={14} fontWeight={700} fill="#fff7e6">🏠 Enchanted Market</text>
-                    </g>
-                  ) : (
+                      <g>
+                        {/* darker base with glow: lighter in dark mode, muted in light mode */}
+                        <circle r={nodeRadius*1.4} fill={isDark ? '#facc15' : '#6b4b1a'} opacity={isDark ? 0.12 : 0.06} style={{filter: 'url(#marketGlow)'}} />
+                        {/* accent ring to give glow but not be too bright on light backgrounds */}
+                        <circle r={nodeRadius+6} fill="none" stroke="#06b6d4" strokeWidth={2} strokeOpacity={0.18} style={{filter: 'url(#glow)'}} />
+                        <circle r={nodeRadius} fill={isDark ? '#ffd36b' : '#c09a2f'} stroke={isDark ? '#5a3c00' : '#35240a'} strokeWidth={1} />
+                        <text x={0} y={nodeRadius*1.85} textAnchor="middle" fontSize={14} fontWeight={700} fill={isDark ? '#fff7e6' : '#071422'}>🏠 Enchanted Market</text>
+                      </g>
+                    ) : (
                     <g>
                       {/* aura */}
                       <circle r={nodeRadius+8} fill={glowColor} opacity={0.08} style={{filter: 'url(#glow)'}} />

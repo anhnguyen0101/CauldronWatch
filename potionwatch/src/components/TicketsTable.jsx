@@ -63,7 +63,7 @@ export default function TicketsTable() {
           <div className="max-h-64 overflow-y-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="text-sm uppercase sticky top-0 bg-panel-dark text-text-light/80 dark:bg-panel-dark dark:text-text-dark/80 backdrop-blur">
+                <tr className="text-sm uppercase sticky top-0 bg-panel-light dark:bg-panel-dark text-text-light/80 dark:text-text-dark/80 backdrop-blur border-b border-border-light dark:border-border-dark">
                   <th className="px-3 py-2">Date</th>
                   <th className="px-3 py-2">Cauldron</th>
                   <th className="px-3 py-2">Ticket Volume</th>
