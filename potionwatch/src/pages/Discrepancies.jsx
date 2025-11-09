@@ -393,7 +393,6 @@ export default function Discrepancies(){
                       {Math.round(d.ticket_volume || 0)} L
                     </td>
                     <td className="px-3 py-3 text-text-light dark:text-text-dark">
->>>>>>> origin/main
                       {Math.round(d.actual_drained || 0)} L
                     </td>
                     <td className={`px-3 py-3 font-semibold ${
