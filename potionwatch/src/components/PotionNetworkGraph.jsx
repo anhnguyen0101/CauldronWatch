@@ -575,8 +575,8 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
 
           {/* Transform group for zoom and pan - ONLY nodes and links */}
           <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`} clipPath="url(#contentClip)">
-            {/* edges (curved) */}
-            <g>
+          {/* edges (curved) */}
+          <g>
             {propLinks.map((l, i) => {
               const a = nodeById.get(l.from) || nodeById.get(l.source) || nodeById.get(l.node_id)
               const b = nodeById.get(l.to) || nodeById.get(l.target) || nodeById.get(l.node_id)
@@ -612,71 +612,45 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
                 </g>
               )
             })}
-            </g>
+          </g>
 
           {/* shipment links to market (if market node exists) */}
           <g>
-            {(() => {
-              const marketNode = nodes.find(n => n.isMarket)
-              if (!marketNode) return null
-              const pm = pos(marketNode)
-              return nodes.filter(n => !n.isMarket).map((src, i) => {
-                const pa = pos(src)
-                const pb = pm
-                const mx = (pa.x + pb.x)/2
-                const my = (pa.y + pb.y)/2
-                const dx = pb.x - pa.x
-                const dy = pb.y - pa.y
-                const cx = mx - dy * 0.06
-                const cy = my + dx * 0.04
-                const d = `M ${pa.x} ${pa.y} Q ${cx} ${cy} ${pb.x} ${pb.y}`
-                // Darker, muted stroke for market routes but keep a soft glow so they remain visible on light backgrounds
-                const stroke = isDark ? '#0b7185' : '#0f3a3a'
-                return (
-                  <g key={`mroute-${i}`}>
-                    <path d={d} fill="none" stroke={stroke} strokeWidth={1.4} strokeOpacity={isDark ? 0.9 : 0.6} style={{filter: 'url(#glow)'}} />
-                    {/* subtle animated hint */}
-                    <path d={d} fill="none" stroke={stroke} strokeWidth={1.2} strokeOpacity={0.85} strokeDasharray={`6 12`} strokeLinecap="round">
-                      <animate attributeName="stroke-dashoffset" from="0" to="-40" dur="4s" repeatCount="indefinite" />
-                    </path>
-                  </g>
-                )
-              })
-            })()}
+            {nodes.map((n, idx) => {
+              if(!n.isMarket) return null
+              return null
+            })}
           </g>
 
-            {/* nodes */}
-            <g>
-              {nodes.map((n) => {
-                // Use optimized pos function - no index needed anymore
-                const p = pos(n)
-                const pct = Math.max(0, Math.min(100, Number(n.fillPercent) || 0))
-                const color = statusColor[n.status] || statusColor.normal
-                const glowColor = color
-                const filled = (pct/100) * circ
-                const dash = `${filled} ${circ}`
+          {/* nodes */}
+          <g>
+            {nodes.map((n) => {
+              // Use optimized pos function - no index needed anymore
+              const p = pos(n)
+              const pct = Math.max(0, Math.min(100, Number(n.fillPercent) || 0))
+              const color = statusColor[n.status] || statusColor.normal
+              const glowColor = color
+              const filled = (pct/100) * circ
+              const dash = `${filled} ${circ}`
 
-                const clientPos = toClient(p.x, p.y)
+              const clientPos = toClient(p.x, p.y)
 
-                const isMarket = !!n.isMarket
+              const isMarket = !!n.isMarket
 
-                return (
-                  <g key={n.id} transform={`translate(${p.x}, ${p.y})`} style={{transition: 'transform 220ms ease'}}
-                     onMouseEnter={(e)=>{
-                       setHover({ node: n, pos: clientPos })
-                     }}
-                     onMouseLeave={()=> setHover(null)}>
+              return (
+                <g key={n.id} transform={`translate(${p.x}, ${p.y})`} style={{transition: 'transform 220ms ease'}}
+                   onMouseEnter={(e)=>{
+                     setHover({ node: n, pos: clientPos })
+                   }}
+                   onMouseLeave={()=> setHover(null)}>
 
                   {isMarket ? (
-                      <g>
-                        {/* darker base with glow: lighter in dark mode, muted in light mode */}
-                        <circle r={nodeRadius*1.4} fill={isDark ? '#facc15' : '#6b4b1a'} opacity={isDark ? 0.12 : 0.06} style={{filter: 'url(#marketGlow)'}} />
-                        {/* accent ring to give glow but not be too bright on light backgrounds */}
-                        <circle r={nodeRadius+6} fill="none" stroke="#06b6d4" strokeWidth={2} strokeOpacity={0.18} style={{filter: 'url(#glow)'}} />
-                        <circle r={nodeRadius} fill={isDark ? '#ffd36b' : '#c09a2f'} stroke={isDark ? '#5a3c00' : '#35240a'} strokeWidth={1} />
-                        <text x={0} y={nodeRadius*1.85} textAnchor="middle" fontSize={14} fontWeight={700} fill={isDark ? '#fff7e6' : '#071422'}>🏠 Enchanted Market</text>
-                      </g>
-                    ) : (
+                    <g>
+                      <circle r={nodeRadius*1.4} fill="#facc15" opacity={0.12} style={{filter: 'url(#marketGlow)'}} />
+                      <circle r={nodeRadius} fill="#ffd36b" stroke="#5a3c00" strokeWidth={1} />
+                      <text x={0} y={nodeRadius*1.85} textAnchor="middle" fontSize={14} fontWeight={700} fill="#fff7e6">🏠 Enchanted Market</text>
+                    </g>
+                  ) : (
                     <g>
                       {/* aura */}
                       <circle r={nodeRadius+8} fill={glowColor} opacity={0.08} style={{filter: 'url(#glow)'}} />
@@ -689,33 +663,20 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
                         <circle r={nodeRadius} cx={0} cy={0} fill="none" stroke="#1f2937" strokeWidth={ringWidth} />
                         <circle r={nodeRadius} cx={0} cy={0} fill="none" stroke={color} strokeWidth={ringWidth} strokeDasharray={dash} strokeLinecap="round" style={{transition: 'stroke-dasharray 900ms ease'}} />
                       </g>
-                    ) : (
-                      <g>
-                        {/* aura */}
-                        <circle r={nodeRadius+8} fill={glowColor} opacity={0.08} style={{filter: 'url(#glow)'}} />
 
-                        {/* outer ring */}
-                        <circle r={nodeRadius+3} fill="#071427" stroke={glowColor} strokeWidth={2} strokeOpacity={0.28} />
+                      {/* inner glass */}
+                      <circle r={nodeRadius-6} fill={isDark ? 'rgba(6,12,18,0.9)' : 'rgba(255,255,255,0.96)'} stroke="rgba(0,0,0,0.04)" strokeWidth={0.6} />
 
-                        {/* progress ring - rotate -90 */}
-                        <g transform="rotate(-90)">
-                          <circle r={nodeRadius} cx={0} cy={0} fill="none" stroke="#1f2937" strokeWidth={ringWidth} />
-                          <circle r={nodeRadius} cx={0} cy={0} fill="none" stroke={color} strokeWidth={ringWidth} strokeDasharray={dash} strokeLinecap="round" style={{transition: 'stroke-dasharray 900ms ease'}} />
-                        </g>
-
-                        {/* inner glass */}
-                        <circle r={nodeRadius-6} fill={isDark ? 'rgba(6,12,18,0.9)' : 'rgba(255,255,255,0.96)'} stroke="rgba(0,0,0,0.04)" strokeWidth={0.6} />
-
-                        {/* percentage label */}
-                        <text x={0} y={2} textAnchor="middle" fontSize={12} fontWeight={700} fill={isDark ? '#e6f0f6' : '#06202a'}>{pct}%</text>
+                      {/* percentage label */}
+                      <text x={0} y={2} textAnchor="middle" fontSize={12} fontWeight={700} fill={isDark ? '#e6f0f6' : '#06202a'}>{pct}%</text>
 
                         {/* name above */}
                         <text x={0} y={-(nodeRadius + 50)} textAnchor="middle" fontSize={11} fill={isDark ? '#9ca3af' : '#334155'}>{n.name}</text>
-                      </g>
-                    )}
-                  </g>
-                )
-              })}
+                    </g>
+                  )}
+                </g>
+              )
+            })}
             </g>
           </g>
 
