@@ -4,6 +4,7 @@ import OptimizedRoutes from "../components/forecast/OptimizedRoutes";
 import DebugPanel from "../components/forecast/DebugPanel";
 import MinimumWitches from "../components/forecast/MinimumWitches";
 import DailySchedule from "../components/forecast/DailySchedule";
+import OptimizationPlan from "../components/OptimizationPlan";
 import {
   requireJson,
   buildPredictions,
@@ -230,6 +231,8 @@ export default function Forecast() {
       />
 
       {/* Sections */}
+      <OptimizationPlan />
+
       <MinimumWitches
         data={minimumWitches}
         loading={loadingForecast}
