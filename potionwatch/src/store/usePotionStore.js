@@ -1,10 +1,7 @@
-import create from 'zustand'
-
-// Start with empty array - will be populated from backend
-const initialCauldrons = []
+import { create } from 'zustand'
 
 const usePotionStore = create((set, get) => ({
-  cauldrons: initialCauldrons,
+  cauldrons: [], // Cauldrons are loaded from backend on app initialization
   alerts: [],
   history: [],
   // playback / selection state
@@ -61,6 +58,19 @@ const usePotionStore = create((set, get) => ({
     })
   },
 
+  setCauldrons: (cauldrons) => set(state => ({ cauldrons })),
+
+  updateCauldronLevels: (updates) => set(state => {
+    // updates is an array of {id, level} objects
+    const updateMap = new Map(updates.map(u => [u.id, u.level]))
+    return {
+      cauldrons: state.cauldrons.map(c => {
+        const newLevel = updateMap.get(c.id)
+        return newLevel !== undefined ? {...c, level: newLevel} : c
+      })
+    }
+  }),
+
   setSelectedHistoryIndex: (index) => set(state => ({ selectedHistoryIndex: index })),
 
   // Apply a historical snapshot to the live cauldrons view (simple mapping)
@@ -91,9 +101,31 @@ const usePotionStore = create((set, get) => ({
     }))
   },
 
-  addAlert: (alert) => set(state => ({ alerts: [alert, ...state.alerts].slice(0,50) })),
+  addAlert: (alert) => set(state => {
+    // Check if alert with same ID already exists to prevent duplicates
+    const existingIds = new Set(state.alerts.map(a => a.id))
+    if (existingIds.has(alert.id)) {
+      // Alert already exists, don't add duplicate
+      return state
+    }
+    // Add new alert at the beginning and limit to 50
+    return { alerts: [alert, ...state.alerts].slice(0, 50) }
+  }),
 
-  pushHistorySnapshot: (snapshot) => set(state => ({ history: [...state.history, snapshot].slice(-500) }))
+  pushHistorySnapshot: (snapshot) => {
+    console.log(`📜 pushHistorySnapshot called:`, {
+      time: snapshot.time,
+      hasCauldrons: !!snapshot.cauldrons,
+      cauldronsCount: snapshot.cauldrons?.length || 0,
+      avgLevel: snapshot.avgLevel,
+      snapshot: snapshot
+    })
+    set(state => {
+      const newHistory = [...state.history, snapshot].slice(-500)
+      console.log(`  📜 History now has ${newHistory.length} snapshots`)
+      return { history: newHistory }
+    })
+  }
 }))
 
 export default usePotionStore

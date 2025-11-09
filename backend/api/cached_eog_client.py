@@ -135,15 +135,26 @@ class CachedEOGClient:
                 latest = self.cache.get_latest_historical_data(cauldron_id=cauldron.cauldron_id)
                 if latest:
                     latest_levels.append(latest)
+                else:
+                    # Log when cache is empty for a cauldron
+                    print(f"⚠️  No cached data for {cauldron.cauldron_id}")
             
             if latest_levels:
+                # Log sample data
+                if len(latest_levels) > 0:
+                    sample = latest_levels[0]
+                    print(f"📊 Returning {len(latest_levels)} cached levels (sample: {sample.cauldron_id} = {sample.level}L)")
                 return latest_levels
         
         # Fetch latest from API (get most recent data point)
         try:
+            print("📊 Fetching latest levels from API...")
             all_data = self.eog_client.get_data()
             if not all_data:
+                print("⚠️  API returned no data")
                 return []
+            
+            print(f"📊 API returned {len(all_data)} data points")
             
             # Group by cauldron and get latest
             latest_by_cauldron = {}
@@ -153,9 +164,16 @@ class CachedEOGClient:
                 elif item.timestamp > latest_by_cauldron[item.cauldron_id].timestamp:
                     latest_by_cauldron[item.cauldron_id] = item
             
+            # Log sample data
+            if latest_by_cauldron:
+                sample_id = list(latest_by_cauldron.keys())[0]
+                sample = latest_by_cauldron[sample_id]
+                print(f"📊 Latest levels for {len(latest_by_cauldron)} cauldrons (sample: {sample_id} = {sample.level}L)")
+            
             # Cache the latest levels
             if use_cache:
                 self.cache.cache_historical_data(list(latest_by_cauldron.values()), clear_old=False)
+                print(f"✅ Cached {len(latest_by_cauldron)} latest levels")
             
             return list(latest_by_cauldron.values())
         except Exception as e:

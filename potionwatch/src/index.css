@@ -16,6 +16,9 @@ body {
 /* Card style used across dashboard; respects light/dark variations */
 .card {
   @apply bg-panel-light dark:bg-panel-dark rounded-2xl p-4 shadow-md border border-border-light dark:border-border-dark;
+  /* Ensure cards don't overflow their containers */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .muted { @apply text-gray-500 dark:text-gray-400 }

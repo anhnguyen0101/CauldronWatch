@@ -30,14 +30,34 @@ class WebSocketManager:
     
     async def send_personal_message(self, message: Dict[str, Any], websocket: WebSocket):
         """Send a message to a specific connection"""
+        from fastapi import WebSocketDisconnect
+        from websockets.exceptions import ConnectionClosedError
+        from uvicorn.protocols.utils import ClientDisconnected
+        
         try:
+            # Check if connection is still valid before sending
+            if hasattr(websocket, 'client_state'):
+                if websocket.client_state.value == 2:  # DISCONNECTED
+                    self.disconnect(websocket)
+                    return
+            
             await websocket.send_json(message)
+        except (WebSocketDisconnect, ConnectionClosedError, ClientDisconnected):
+            # Normal disconnect - silently handle
+            self.disconnect(websocket)
         except Exception as e:
-            print(f"Error sending personal message: {e}")
+            error_msg = str(e).lower()
+            # Only log non-disconnect errors
+            if 'connection closed' not in error_msg and 'disconnect' not in error_msg and 'not connected' not in error_msg:
+                print(f"Error sending personal message: {e}")
             self.disconnect(websocket)
     
     async def broadcast(self, message: Dict[str, Any]):
         """Broadcast a message to all connected clients"""
+        from fastapi import WebSocketDisconnect
+        from websockets.exceptions import ConnectionClosedError
+        from uvicorn.protocols.utils import ClientDisconnected
+        
         # Ensure all datetime objects are converted to strings
         def serialize_datetime(obj):
             """Recursively serialize datetime objects in dict/list"""
@@ -53,14 +73,28 @@ class WebSocketManager:
         
         message = serialize_datetime(message)
         
+        # Use a copy to avoid modification during iteration
         disconnected = []
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
             try:
+                # Check connection state before sending
+                # FastAPI WebSocket has client_state attribute
+                if hasattr(connection, 'client_state'):
+                    # 1 = CONNECTED, 2 = DISCONNECTED
+                    if connection.client_state.value == 2:
+                        disconnected.append(connection)
+                        continue
+                
                 await connection.send_json(message)
+            except (WebSocketDisconnect, ConnectionClosedError, ClientDisconnected) as e:
+                # Normal disconnect - silently handle
+                disconnected.append(connection)
             except Exception as e:
-                print(f"Error broadcasting to connection: {e}")
-                import traceback
-                traceback.print_exc()
+                # Other errors - log but don't spam
+                error_msg = str(e)
+                # Only log if it's not a connection closed error
+                if 'connection closed' not in error_msg.lower() and 'disconnect' not in error_msg.lower():
+                    print(f"Error broadcasting to connection: {e}")
                 disconnected.append(connection)
         
         # Remove disconnected clients
