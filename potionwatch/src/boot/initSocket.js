@@ -58,20 +58,7 @@ export function initSocket(){
             timestamp: new Date().toISOString()
           })
         }
-
-        // Alert rule: overfill detection
-        msg.data.forEach(u=>{
-          if(u.level > 95){
-            addAlert({ 
-              id: Date.now() + (u.id || ''), 
-              title: `Overfill ${u.id}`, 
-              message: `${u.id} is above 95% (${u.level}%)`,
-              severity: 'warning',
-              timestamp: new Date().toISOString()
-            })
-          }
-        })
-      }
+      })
     } else if(msg.type === 'drain_event'){
       // Handle drain event from WebSocket
       console.log('💧 Drain event received:', msg.data)

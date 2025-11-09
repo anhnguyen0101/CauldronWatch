@@ -32,7 +32,6 @@ class WebSocketManager:
         """Send a message to a specific connection"""
         from fastapi import WebSocketDisconnect
         from websockets.exceptions import ConnectionClosedError
-        from uvicorn.protocols.utils import ClientDisconnected
         
         try:
             # Check if connection is still valid before sending
@@ -42,7 +41,7 @@ class WebSocketManager:
                     return
             
             await websocket.send_json(message)
-        except (WebSocketDisconnect, ConnectionClosedError, ClientDisconnected):
+        except (WebSocketDisconnect, ConnectionClosedError):
             # Normal disconnect - silently handle
             self.disconnect(websocket)
         except Exception as e:
@@ -56,7 +55,6 @@ class WebSocketManager:
         """Broadcast a message to all connected clients"""
         from fastapi import WebSocketDisconnect
         from websockets.exceptions import ConnectionClosedError
-        from uvicorn.protocols.utils import ClientDisconnected
         
         # Ensure all datetime objects are converted to strings
         def serialize_datetime(obj):
@@ -86,7 +84,7 @@ class WebSocketManager:
                         continue
                 
                 await connection.send_json(message)
-            except (WebSocketDisconnect, ConnectionClosedError, ClientDisconnected) as e:
+            except (WebSocketDisconnect, ConnectionClosedError) as e:
                 # Normal disconnect - silently handle
                 disconnected.append(connection)
             except Exception as e:

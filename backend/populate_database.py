@@ -80,6 +80,12 @@ def populate_all_data():
         cache.cache_historical_data(all_data, clear_old=False)
         print(f"   ✅ Cached {len(all_data)} data points")
         
+        # 6. Fetch and cache data metadata
+        print("\n6️⃣  Fetching data metadata...")
+        metadata = client.get_data_metadata(use_cache=False)
+        print(f"   ✅ Data metadata: {metadata.start_date.date()} to {metadata.end_date.date()}")
+        print(f"      Interval: {metadata.interval_minutes} minutes, Unit: {metadata.unit}")
+        
         print("\n" + "=" * 70)
         print("DATABASE SUMMARY")
         print("=" * 70)

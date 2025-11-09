@@ -84,40 +84,9 @@ export async function fetchHistory(cauldronId = null, startDate = null, endDate 
     return result
   } catch (error) {
     console.error('Error fetching history:', error)
-    // Fallback to mock data
-    const now = Date.now()
-    const data = []
-    for(let i=0;i<10;i++){
-      data.push({ time: new Date(now - (10 - i)*24*60*60000).toLocaleDateString(), avgLevel: Math.round(40 + 40*Math.abs(Math.sin(i/2))) })
-    }
-    
-    // Check if this cauldron already exists in this snapshot (keep latest)
-    const existingIndex = grouped[timeKey].cauldrons.findIndex(c => c.id === cauldronData.id)
-    if (existingIndex === -1) {
-      grouped[timeKey].cauldrons.push(cauldronData)
-    } else {
-      // Update with latest data
-      grouped[timeKey].cauldrons[existingIndex] = cauldronData
-    }
-  })
-  
-  const snapshots = Object.values(grouped).map(snapshot => ({
-    time: snapshot.time,
-    avgLevel: 0, // Will be calculated after percentage conversion
-    cauldrons: snapshot.cauldrons, // Include per-cauldron data (with levelLiters)
-    _levelsLiters: snapshot.levels // Temporary: store liters for conversion
-  }))
-  
-  console.log('📜 fetchHistory: Created', snapshots.length, 'snapshots (with levelLiters, will convert to % later)')
-  if (snapshots.length > 0) {
-    console.log('📜 Sample snapshot (before conversion):', {
-      time: snapshots[0].time,
-      cauldronsCount: snapshots[0].cauldrons.length,
-      sampleCauldron: snapshots[0].cauldrons[0]
-    })
+    // Return empty array on error
+    return []
   }
-  
-  return snapshots
 }
 
 // Fetch tickets

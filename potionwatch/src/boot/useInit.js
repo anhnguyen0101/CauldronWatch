@@ -56,33 +56,6 @@ export default function useInit(){
       // Load latest levels
       return fetchLatestLevels()
     }).then(levels => {
-      console.log('📊 Fetched latest levels from backend:', levels?.length || 0)
-      if (levels && levels.length > 0) {
-        const store = usePotionStore.getState()
-        // Transform backend format to frontend format
-        // Backend returns: {id, latitude, longitude, max_volume, name}
-        const transformed = cauldrons.map(c => {
-          const cauldronId = c.cauldron_id || c.id
-          return {
-            id: cauldronId,
-            name: c.name || cauldronId,
-            lat: c.latitude,
-            lng: c.longitude,
-            level: 0, // Will be updated by latest levels
-            capacity: c.capacity || c.max_volume || 1000
-          }
-        })
-        
-        console.log('✅ Transformed cauldrons:', transformed.length, transformed[0])
-        
-        // Update store with cauldrons using the store method
-        usePotionStore.getState().setCauldrons(transformed)
-        console.log('✅ Store updated with', transformed.length, 'cauldrons')
-        
-        // Load latest levels
-        return fetchLatestLevels()
-      })
-      .then(levels => {
         if (!levels) {
           console.warn('⚠️  No levels data received from backend (levels is null/undefined)')
           return
@@ -151,24 +124,17 @@ export default function useInit(){
       .then(h => {
         if (!h || h.length === 0) {
           console.log('📜 No history data to load')
-          return
+        } else {
+          console.log(`📜 Loaded ${h.length} history snapshots`)
         }
         
-        // Log average level for verification
-        const avgLevel = Math.round(
-          store.cauldrons.reduce((sum, c) => sum + c.level, 0) / store.cauldrons.length
-        )
-        console.log(`📊 Average level: ${avgLevel}%`)
-      } else {
-        console.warn('⚠️  No levels data received from backend')
-      }
-      
-      // History loading is now handled by TimelineHeatmap component
-      // It will fetch 7 days of data once and filter client-side
-      console.log('✅ Initial data loaded. Timeline will load history separately.')
-    }).catch(err => {
-      console.error('❌ Error loading initial data:', err)
-    })
+        // History loading is now handled by TimelineHeatmap component
+        // It will fetch 7 days of data once and filter client-side
+        console.log('✅ Initial data loaded. Timeline will load history separately.')
+      })
+      .catch(err => {
+        console.error('❌ Error loading initial data:', err)
+      })
 
     // Initialize WebSocket connection
     const sock = initSocket()

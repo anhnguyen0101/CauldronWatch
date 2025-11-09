@@ -301,7 +301,19 @@ class CachedEOGClient:
         """Get directed graph neighbors - no caching needed"""
         return self.eog_client.get_graph_neighbors_directed(node_id)
     
-    def get_data_metadata(self):
-        """Get data metadata - no caching needed"""
-        return self.eog_client.get_data_metadata()
+    def get_data_metadata(self, use_cache: bool = True):
+        """Get data metadata with caching"""
+        if use_cache:
+            cached = self.cache.get_cached_data_metadata(max_age_minutes=self.cache_ttl)
+            if cached:
+                return cached
+        
+        # Fetch from API
+        metadata = self.eog_client.get_data_metadata()
+        
+        # Cache the results
+        if use_cache:
+            self.cache.cache_data_metadata(metadata)
+        
+        return metadata
 
