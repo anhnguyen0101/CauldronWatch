@@ -14,6 +14,47 @@ const statusColorMap = {
   underfill: 'border-gray-400 bg-gray-400/10 dark:bg-gray-700/80'
 }
 
+// Map fill percentage to color classes per requested ranges.
+// Assumption: keep underfill (<20) and overfill (>=95) using existing alert colors.
+// For normal range:
+//  - >20% and <=50% -> light/medium green
+//  - >50% and <95% -> darker green
+const fillPercentToColorClass = (fill, status) => {
+  // Preserve explicit statuses first
+  if (status === 'overfill') return statusColorMap.overfill
+  if (status === 'underfill') return statusColorMap.underfill
+
+  const pct = Number(fill) || 0
+
+  if (pct >= 95) return statusColorMap.overfill
+
+  if (pct > 50 && pct < 95) {
+    // Even darker green for higher fills
+    return 'border-emerald-800 bg-emerald-800/10 dark:bg-emerald-900/80'
+  }
+
+  if (pct > 20 && pct <= 50) {
+    // Medium / light green
+    return 'border-emerald-500 bg-emerald-500/10 dark:bg-emerald-700/80'
+  }
+
+  // Fallback: keep default normal
+  return statusColorMap.normal
+}
+
+// Return an rgba shadow color for the glow effect based on fill/status
+const fillPercentToGlowColor = (fill, status) => {
+  if (status === 'overfill') return 'rgba(239,68,68,0.32)' // red-500-ish
+  if (status === 'underfill') return 'rgba(107,114,128,0.22)' // gray-500-ish
+
+  const pct = Number(fill) || 0
+  if (pct >= 95) return 'rgba(239,68,68,0.32)'
+  if (pct > 50 && pct < 95) return 'rgba(4,120,87,0.34)' // darker emerald
+  if (pct > 20 && pct <= 50) return 'rgba(16,185,129,0.28)' // medium emerald
+
+  return 'rgba(16,185,129,0.16)'
+}
+
 export default function TimelineHeatmap({ onCellClick } = {}) {
   const history = usePotionStore(s => s.history)
   const cauldrons = usePotionStore(s => s.cauldrons)
@@ -348,7 +389,8 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                         : (m?.level ?? m?.fillPercent ?? 0)  // Historical: use snapshot
                       
                       const status = m?.status || (fill > 95 ? 'overfill' : fill < 20 ? 'underfill' : 'normal')
-                      const colorClass = statusColorMap[status] || statusColorMap.normal
+                      const colorClass = fillPercentToColorClass(fill, status)
+                      const glowColor = fillPercentToGlowColor(fill, status)
                       const drain = m?.drainVolume ?? 0
                       const alertCount = m?.alertCount ?? 0
 
@@ -380,11 +422,14 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                             } ${
                               hoveredCauldron === c.id ? 'scale-105 ring-2 ring-accent/50' : ''
                             } cursor-pointer relative transition-all`}
+                            style={{ boxShadow: `0 0 10px 3px ${glowColor}`, WebkitBoxShadow: `0 0 10px 3px ${glowColor}` }}
                             title={`${c.name}\n${fill}% — ${drain}L${isLiveCol ? ' (LIVE)' : ''}`}
                           >
                             <div className="text-[10px] font-medium">{c.name}</div>
                             <div className="text-sm font-semibold mt-1">{Math.round(fill)}%</div>
-                            <div className="text-[10px] text-text-light/70 dark:text-text-dark/70 mt-1">{drain}L</div>
+                            {drain ? (
+                              <div className="text-[10px] text-text-light/70 dark:text-text-dark/70 mt-1">{drain}L</div>
+                            ) : null}
                             
                             {alertCount > 0 && (
                               <motion.div
