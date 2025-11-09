@@ -50,21 +50,36 @@ export async function fetchHistory(cauldronId = null, startDate = null, endDate 
         grouped[timeKey] = {
           time: date.toLocaleTimeString(),
           timestamp: date.getTime(), // Store timestamp for filtering
-          levels: [],
-          cauldrons: []
+          levels: [], 
+          cauldrons: [], // Will store Map to deduplicate by cauldron_id
+          cauldronsMap: new Map() // Track latest value per cauldron
         }
       }
       grouped[timeKey].levels.push(point.level)
-      // Store per-cauldron data for timeline
+      
+      // Store per-cauldron data for timeline (keep latest value per cauldron per minute)
       // Use capacity from cauldronsMap if available, otherwise from point or default
-      const capacity = cauldronsMap?.get(point.cauldron_id)?.capacity ||
-        point.capacity ||
-        point.max_volume ||
-        1000
-      grouped[timeKey].cauldrons.push({
-        id: point.cauldron_id,
-        level: Math.round((point.level / capacity) * 100) // Convert to percentage
-      })
+      const capacity = cauldronsMap?.get(point.cauldron_id)?.capacity || 
+                       point.capacity || 
+                       point.max_volume || 
+                       1000
+      const percentage = Math.round((point.level / capacity) * 100)
+      
+      // Keep the latest value for each cauldron (in case of duplicates in same minute)
+      const existing = grouped[timeKey].cauldronsMap.get(point.cauldron_id)
+      if (!existing || new Date(point.timestamp) > new Date(existing.timestamp)) {
+        grouped[timeKey].cauldronsMap.set(point.cauldron_id, {
+          id: point.cauldron_id,
+          level: percentage,
+          timestamp: point.timestamp
+        })
+      }
+    })
+    
+    // Convert cauldronsMap to array for each timeKey
+    Object.keys(grouped).forEach(timeKey => {
+      grouped[timeKey].cauldrons = Array.from(grouped[timeKey].cauldronsMap.values())
+      delete grouped[timeKey].cauldronsMap // Clean up
     })
 
     // Convert to array and sort by timestamp

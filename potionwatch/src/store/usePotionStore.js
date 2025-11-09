@@ -110,14 +110,33 @@ const usePotionStore = create((set, get) => ({
   },
 
   addAlert: (alert) => set(state => {
+    console.log('🚨 addAlert called:', alert)
     // Check if alert with same ID already exists to prevent duplicates
     const existingIds = new Set(state.alerts.map(a => a.id))
     if (existingIds.has(alert.id)) {
-      // Alert already exists, don't add duplicate
-      return state
+      // Alert already exists - update it with new timestamp/message instead of skipping
+      console.log('⚠️ Alert already exists, updating:', alert.id)
+      const updatedAlerts = state.alerts.map(a => 
+        a.id === alert.id ? { ...a, ...alert, timestamp: alert.timestamp, time: alert.time } : a
+      )
+      return { alerts: updatedAlerts }
     }
     // Add new alert at the beginning and limit to 50
-    return { alerts: [alert, ...state.alerts].slice(0, 50) }
+    const newAlerts = [alert, ...state.alerts].slice(0, 50)
+    console.log(`✅ Alert added. Total alerts: ${newAlerts.length}`)
+    return { alerts: newAlerts }
+  }),
+
+  removeAlert: (alertId) => set(state => {
+    const exists = state.alerts.some(a => a.id === alertId)
+    if (!exists) {
+      // Alert doesn't exist, no need to remove - skip silently
+      return state
+    }
+    console.log('🗑️ removeAlert called:', alertId)
+    const filtered = state.alerts.filter(a => a.id !== alertId)
+    console.log(`✅ Alert removed. Total alerts: ${filtered.length}`)
+    return { alerts: filtered }
   }),
 
   pushHistorySnapshot: (snapshot) => {

@@ -5,10 +5,15 @@ import { AlertTriangle, XCircle } from 'lucide-react'
 export default function AlertsPanel(){
   const alerts = usePotionStore(s => s.alerts)
 
+  // Debug: Log alerts whenever they change
+  React.useEffect(() => {
+    console.log('📊 AlertsPanel: Current alerts:', alerts.length, alerts.map(a => ({ id: a.id, title: a.title })))
+  }, [alerts.length, alerts.map(a => a.id).join(',')])
+
   return (
     <aside className="w-80 ml-6">
       <div className="card">
-        <h3 className="panel-title mb-2">Live Alerts</h3>
+        <h3 className="panel-title mb-2">Live Alerts ({alerts.length})</h3>
         <div className="space-y-2 max-h-96 overflow-auto">
           {alerts.length === 0 && <div className="text-gray-400">No alerts</div>}
           {alerts.map(a=> (

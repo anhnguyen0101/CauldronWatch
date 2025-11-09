@@ -100,6 +100,41 @@ export default function useInit(){
             store.setCauldronLevel(cauldronId, percentage)
             updated++
             console.log(`   ✅ Updated ${cauldronId}: ${level.level}L / ${cauldron.capacity}L = ${percentage}%`)
+            
+            // Check for alerts on initial load
+            const addAlert = store.addAlert
+            const cauldronName = cauldron.name || cauldronId
+            
+            // Overfill alert: level > 95%
+            if(percentage > 95){
+              const alertId = `overfill_${cauldronId}`
+              console.log(`🚨 [INITIAL LOAD] Creating overfill alert for ${cauldronName}: ${percentage}%`)
+              addAlert({ 
+                id: alertId,
+                title: `⚠️ Overfill Alert: ${cauldronName}`, 
+                message: `${cauldronName} is above 95% (${percentage}%)`,
+                severity: 'critical',
+                timestamp: new Date().toISOString(),
+                time: new Date().toLocaleTimeString()
+              })
+            }
+            // Underfill alert: level < 20%
+            else if(percentage < 20){
+              const alertId = `underfill_${cauldronId}`
+              console.log(`⚠️ [INITIAL LOAD] Creating underfill alert for ${cauldronName}: ${percentage}%`)
+              addAlert({ 
+                id: alertId,
+                title: `⚠️ Underfill Alert: ${cauldronName}`, 
+                message: `${cauldronName} is below 20% (${percentage}%)`,
+                severity: 'warning',
+                timestamp: new Date().toISOString(),
+                time: new Date().toLocaleTimeString()
+              })
+            }
+            // Debug: log when checking but not creating alert
+            else {
+              console.log(`   ℹ️  [INITIAL LOAD] ${cauldronName}: ${percentage}% (normal, no alert)`)
+            }
           })
           
           console.log(`✅ Updated ${updated}/${levels.length} cauldron levels (skipped: ${skipped})`)
