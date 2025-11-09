@@ -67,12 +67,12 @@ export default function PredictedOverflows({ loading, error, predictions }) {
                         const barClass = barColorForPrediction(p);
                         const icon = getStatusIcon(p.minutesToOverflow);
 
-                            return (
+                        return (
                             <div
                                 key={p.id}
                                 className="flex items-center gap-3 bg-panel-light/80 border border-border-light dark:bg-slate-950/40 dark:border-slate-800/70 rounded-2xl px-3 py-3"
                             >
-                                <div className="w-12 h-12 rounded-full bg-panel-dark dark:bg-slate-900 flex items-center justify-center overflow-hidden">
+                                <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden bg-slate-200 dark:bg-slate-900">
                                     <img
                                         src={icon.src}
                                         alt={icon.alt}
@@ -98,9 +98,9 @@ export default function PredictedOverflows({ loading, error, predictions }) {
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="w-full h-2 bg-panel-dark rounded-full overflow-hidden">
+                                    <div className="w-full h-2 rounded-full overflow-hidden border border-slate-900 dark:border-slate-200 bg-slate-200 dark:bg-slate-900/60">
                                         <div
-                                            className={`${barClass} h-2 rounded-full transition-all`}
+                                            className={`${barClass} h-full rounded-full transition-all`}
                                             style={{ width: `${usedFrac * 100}%` }}
                                         />
                                     </div>

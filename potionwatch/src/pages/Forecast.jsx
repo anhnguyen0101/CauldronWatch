@@ -96,16 +96,6 @@ export default function Forecast() {
 
   return (
     <div className="space-y-6">
-      {/* Header + toggle */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-semibold text-text-light dark:text-slate-50">
-          Forecast &amp; Routes
-        </h2>
-        <span className="text-xs text-slate-500">
-          Based on latest live fill rates
-        </span>
-      </div>
-
 
       {/* Debug */}
       <DebugPanel
