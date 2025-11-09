@@ -386,6 +386,11 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
               const filled = (pct/100) * circ
               const dash = `${filled} ${circ}`
 
+              // Debug logging for high-level cauldrons (development only)
+              if (process.env.NODE_ENV === 'development' && pct > 90) {
+                console.log(`🔥 High level cauldron: ${n.name} = ${pct}% (fillPercent: ${n.fillPercent}, status: ${n.status}, color: ${color})`)
+              }
+
               const clientPos = toClient(p.x, p.y)
 
               const isMarket = !!n.isMarket

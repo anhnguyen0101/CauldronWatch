@@ -33,19 +33,33 @@ export default function Overview(){
       }
     }
     
-    const nodeList = cauldrons.map(c => ({
-    id: c.cauldron_id || c.id || c.cauldronId,
-    name: c.name || c.label || (`${c.cauldron_id || c.id}`),
-    fillPercent: c.level ?? c.fillPercent ?? 0,
-    status: c.status || 'normal',
-      x: typeof c.x === 'number' ? c.x : undefined,
-      y: typeof c.y === 'number' ? c.y : undefined,
-      lat: c.latitude ?? c.lat,
-      lng: c.longitude ?? c.lng,
-      latitude: c.latitude ?? c.lat,
-      longitude: c.longitude ?? c.lng,
-    isMarket: false
-  }))
+    const nodeList = cauldrons.map(c => {
+      const level = c.level ?? c.fillPercent ?? 0
+      
+      // Dynamically calculate status based on level (matches alert thresholds)
+      let status = 'normal'
+      if (level > 95) {
+        status = 'overfill'
+      } else if (level < 20) {
+        status = 'underfill'
+      } else if (level > 80) {
+        status = 'filling'
+      }
+      
+      return {
+        id: c.cauldron_id || c.id || c.cauldronId,
+        name: c.name || c.label || (`${c.cauldron_id || c.id}`),
+        fillPercent: level,
+        status: status,
+        x: typeof c.x === 'number' ? c.x : undefined,
+        y: typeof c.y === 'number' ? c.y : undefined,
+        lat: c.latitude ?? c.lat,
+        lng: c.longitude ?? c.lng,
+        latitude: c.latitude ?? c.lat,
+        longitude: c.longitude ?? c.lng,
+        isMarket: false
+      }
+    })
 
   if (market) {
       nodeList.push({
