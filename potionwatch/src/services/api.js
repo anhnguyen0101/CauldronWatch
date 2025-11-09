@@ -195,15 +195,17 @@ export async function checkBackendHealth() {
 export async function fetchNetwork() {
   try {
     const response = await api.get('/api/network')
-    // Backend returns a NetworkDto with nodes and edges; normalize to frontend-friendly links
-    // Example edge shape from backend: {from: 'cauldron_001', to: 'market_001', cost: '00:45:00', node_id: 'market_001'}
+    // Backend returns a NetworkDto with edges
+    // EdgeDto format: {from_node (alias: "from"), to_node (alias: "to"), travel_time_minutes, weight, distance}
     const network = response.data || {}
     const edges = (network.edges || []).map(e => ({
-      from: e.from || e.node_id || null,
-      to: e.to || e.node_id || null,
-      cost: e.cost || null,
-      distance: e.distance || null,
-      weight: e.weight || null
+      from: e.from_node || e.from || null,
+      from_node: e.from_node || e.from || null, // Support both formats
+      to: e.to_node || e.to || null,
+      to_node: e.to_node || e.to || null, // Support both formats
+      travel_time_minutes: e.travel_time_minutes != null ? e.travel_time_minutes : null,
+      distance: e.distance != null ? e.distance : null,
+      weight: e.weight != null ? e.weight : null
     }))
     return { nodes: network.nodes || [], edges }
   } catch (error) {
