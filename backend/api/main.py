@@ -496,50 +496,59 @@ async def websocket_endpoint(websocket: WebSocket):
                 "message": "Connected to CauldronWatch real-time updates"
             }, websocket)
         except Exception as e:
-            print(f"⚠️  Error sending initial WebSocket message: {e}")
-            # Don't break - connection might still be valid
+            # If we can't send the initial message, the connection is likely broken
+            error_msg = str(e).lower()
+            if 'connection closed' not in error_msg and 'disconnect' not in error_msg:
+                print(f"⚠️  Error sending initial WebSocket message: {e}")
+            ws_manager.disconnect(websocket)
+            return
         
-        # Keep connection alive with a simple heartbeat
-        # The client doesn't need to send messages, we just broadcast
-        import asyncio
+        # Keep connection alive - wait for client to disconnect
+        # For broadcast-only connections, we wait for any message or disconnect
+        # The client may not send messages, but we still need to detect disconnects
         try:
-            # Wait for disconnect or client message
-            # Use a background task to keep connection alive
+            # Wait for client to disconnect or send a message
+            # Use receive() to handle any type of message (text, binary, ping, pong)
+            # This will raise WebSocketDisconnect when client disconnects
             while True:
                 try:
-                    # Wait for any message from client (or disconnect)
-                    # This keeps the connection alive
-                    await asyncio.wait_for(
-                        websocket.receive_text(),
-                        timeout=30.0  # 30 second timeout
-                    )
-                    # Client sent a message - ignore it (we're just broadcasting)
-                except asyncio.TimeoutError:
-                    # Timeout is normal - connection is still alive
-                    # Check if connection is still valid by trying to send a ping
-                    try:
-                        if websocket.client_state.value == 1:  # CONNECTED
-                            await ws_manager.send_personal_message({
-                                "type": "ping",
-                                "timestamp": datetime.now().isoformat()
-                            }, websocket)
-                        else:
-                            # Connection is not in CONNECTED state
-                            break
-                    except Exception:
-                        # Error sending ping - connection is likely closed
+                    # Wait for any message - this will block until client sends something or disconnects
+                    # For broadcast-only, client typically won't send messages, but we need to detect disconnects
+                    # FastAPI will raise WebSocketDisconnect when connection closes
+                    message = await websocket.receive()
+                    # Client sent a message - we can ignore it since we're just broadcasting
+                    # But log it for debugging if needed
+                    if message.get("type") == "websocket.receive":
+                        # Client sent data - ignore for broadcast-only
+                        pass
+                except WebSocketDisconnect:
+                    # Normal disconnect - break the loop
+                    break
+                except Exception as e:
+                    # Check if it's a connection error
+                    error_msg = str(e).lower()
+                    if 'connection closed' in error_msg or 'disconnect' in error_msg:
                         break
+                    # Log unexpected errors (but not too frequently)
+                    import time
+                    if not hasattr(websocket_endpoint, '_last_error_log') or time.time() - websocket_endpoint._last_error_log > 60:
+                        print(f"⚠️  WebSocket receive error: {e}")
+                        websocket_endpoint._last_error_log = time.time()
+                    break
         except WebSocketDisconnect:
-            # Normal disconnect
+            # Normal disconnect - this is expected
             pass
+        except Exception as e:
+            # Check if it's a connection-related error (expected)
+            error_msg = str(e).lower()
+            if 'connection closed' not in error_msg and 'disconnect' not in error_msg:
+                print(f"⚠️  WebSocket error: {e}")
     except WebSocketDisconnect:
         pass  # Normal disconnect
     except Exception as e:
         error_msg = str(e).lower()
         if 'connection closed' not in error_msg and 'disconnect' not in error_msg:
             print(f"❌ WebSocket error: {e}")
-            import traceback
-            traceback.print_exc()
     finally:
         ws_manager.disconnect(websocket)
         print(f"🔌 WebSocket disconnected. Total connections: {len(ws_manager.active_connections)}")
@@ -559,16 +568,19 @@ async def periodic_update():
     """Periodically fetch and broadcast updates"""
     from backend.database.db import get_db_session
     update_interval = 5  # Update every 5 seconds to avoid rate limiting
+    broadcast_interval = 30  # Only broadcast every 30 seconds (unless data changes)
     drain_check_interval = 60  # Check for drains every 60 seconds (reduced frequency)
     discrepancy_check_interval = 120  # Check for discrepancies every 2 minutes (reduced frequency)
     api_refresh_interval = 120  # Only fetch from API every 2 minutes (use cache otherwise)
     
     print(f"🔄 Background updater started (interval: {update_interval}s, API refresh: {api_refresh_interval}s)")
-    print(f"   Drain check: every {drain_check_interval}s, Discrepancy check: every {discrepancy_check_interval}s")
+    print(f"   Broadcast: every {broadcast_interval}s, Drain check: every {drain_check_interval}s, Discrepancy check: every {discrepancy_check_interval}s")
     
     last_drain_check = 0
     last_discrepancy_check = 0
     last_api_fetch = 0
+    last_broadcast = 0
+    last_broadcast_data_hash = None  # Track data hash to detect changes
     rate_limit_backoff = 0  # Track if we're in rate limit backoff
     
     while True:
@@ -624,7 +636,9 @@ async def periodic_update():
                     cache.cache_historical_data(latest_levels, clear_old=False)
                 
                 # Broadcast to all connected WebSocket clients
-                # Enrich level data with cauldron metadata (max_volume) for frontend percentage calculation
+                # Only broadcast if enough time has passed OR if data has changed
+                should_broadcast = (current_time - last_broadcast) >= broadcast_interval
+                
                 if latest_levels and len(latest_levels) > 0:
                     # Create a lookup map for cauldron metadata (use both id and cauldron_id property)
                     cauldron_map = {}
@@ -645,48 +659,72 @@ async def periodic_update():
                             update_dict['name'] = cauldron_info.name
                             # Ensure cauldron_id is set
                             update_dict['cauldron_id'] = level_data.cauldron_id
-                            # Log sample data for debugging
-                            if len(enriched_updates) < 2:
-                                print(f"📊 Broadcasting level update: {level_data.cauldron_id} = {level_data.level}L / {cauldron_info.max_volume}L = {round((level_data.level / cauldron_info.max_volume) * 100, 1)}%")
                         else:
-                            print(f"⚠️  No cauldron info found for {level_data.cauldron_id} (available IDs: {list(cauldron_map.keys())[:5]}...)")
+                            # Only log missing cauldron info occasionally
+                            if int(current_time) % 300 == 0:  # Every 5 minutes
+                                print(f"⚠️  No cauldron info found for {level_data.cauldron_id} (available IDs: {list(cauldron_map.keys())[:5]}...)")
                         enriched_updates.append(update_dict)
                     
-                    if enriched_updates:
-                        await ws_manager.broadcast_cauldron_update({
-                            "cauldrons": enriched_updates,
-                            "timestamp": datetime.now().isoformat()
-                        })
+                    # Create a hash of the current data to detect changes
+                    import hashlib
+                    # Create a simple string representation for hashing
+                    data_str = "|".join([f"{u.get('cauldron_id')}:{u.get('level')}:{u.get('timestamp', '')}" for u in sorted(enriched_updates, key=lambda x: x.get('cauldron_id', ''))])
+                    current_data_hash = hashlib.md5(data_str.encode()).hexdigest()
+                    
+                    # Check if data has changed
+                    data_changed = current_data_hash != last_broadcast_data_hash
+                    
+                    # Broadcast if enough time has passed OR if data changed
+                    if should_broadcast or data_changed:
+                        if enriched_updates and len(ws_manager.active_connections) > 0:
+                            # Only log when broadcasting and data changed or first time
+                            if data_changed or last_broadcast_data_hash is None:
+                                sample_cauldron = enriched_updates[0]
+                                if 'cauldron_id' in sample_cauldron and 'level' in sample_cauldron and 'capacity' in sample_cauldron:
+                                    print(f"📊 Broadcasting level update: {sample_cauldron['cauldron_id']} = {sample_cauldron['level']}L / {sample_cauldron['capacity']}L = {round((sample_cauldron['level'] / sample_cauldron['capacity']) * 100, 1)}%")
+                            
+                            await ws_manager.broadcast_cauldron_update({
+                                "cauldrons": enriched_updates,
+                                "timestamp": datetime.now().isoformat()
+                            })
+                            last_broadcast = current_time
+                            last_broadcast_data_hash = current_data_hash
                 else:
-                    # Log when no levels are available
-                    if int(current_time) % 60 == 0:  # Only log every minute to avoid spam
+                    # Log when no levels are available (less frequently)
+                    if int(current_time) % 300 == 0:  # Every 5 minutes
                         print(f"⚠️  No latest levels to broadcast (cache may be empty)")
                 
-                # Check for new drain events (every 30 seconds)
+                # Check for new drain events (every 60 seconds)
+                # Only check the last 10 minutes to avoid re-detecting old drains
                 if current_time - last_drain_check >= drain_check_interval:
                     last_drain_check = current_time
                     try:
                         service = AnalysisService(db)
-                        # Get recent analysis (last hour)
+                        # Only analyze the last 10 minutes for new drain detection
+                        # This prevents re-detecting drains that are older
                         from datetime import timedelta
                         import pandas as pd
                         # Convert to pandas Timestamp (timezone-naive) to avoid comparison issues
-                        start_time = pd.Timestamp(datetime.now() - timedelta(hours=1), tz=None)
+                        # Only check last 10 minutes for new drains
+                        start_time = pd.Timestamp(datetime.now() - timedelta(minutes=10), tz=None)
                         try:
                             # Use cache for drain detection to avoid API calls
                             analyses = service.analyze_all_cauldrons(start=start_time, use_cache=True)
                         except Exception as e:
                             # If rate limit, skip this cycle
                             if '429' in str(e) or 'rate limit' in str(e).lower():
-                                print(f"⚠️  Rate limit in drain detection, skipping this cycle")
+                                if int(current_time) % 300 == 0:  # Only log every 5 minutes
+                                    print(f"⚠️  Rate limit in drain detection, skipping this cycle")
                                 continue
-                            print(f"⚠️ Error in drain analysis (will retry next cycle): {e}")
-                            import traceback
-                            traceback.print_exc()
+                            if int(current_time) % 300 == 0:  # Only log every 5 minutes
+                                print(f"⚠️ Error in drain analysis (will retry next cycle): {e}")
+                                import traceback
+                                traceback.print_exc()
                             continue
                         
                         global _LAST_DRAIN_EVENTS
                         with _LAST_DRAIN_EVENTS_LOCK:
+                            new_drains_count = 0
                             for cauldron_id, analysis in analyses.items():
                                 if analysis.drain_events:
                                     # Create unique IDs for drain events
@@ -722,14 +760,20 @@ async def periodic_update():
                                                     "volume_drained": volume,
                                                     "drain_rate": drain_rate
                                                 })
+                                                new_drains_count += 1
                                                 print(f"💧 New drain event detected: {drain.cauldron_id} at {start_ts}")
                                     
-                                    # Update stored drain IDs
-                                    _LAST_DRAIN_EVENTS[cauldron_id] = current_drain_ids
+                                    # Update stored drain IDs (keep last 1000 to prevent memory issues)
+                                    _LAST_DRAIN_EVENTS[cauldron_id] = current_drain_ids[-1000:] if len(current_drain_ids) > 1000 else current_drain_ids
+                            
+                            # Only log if we found new drains
+                            if new_drains_count > 0:
+                                print(f"💧 Found {new_drains_count} new drain event(s)")
                     except Exception as e:
-                        print(f"❌ Error checking for drain events: {e}")
-                        import traceback
-                        traceback.print_exc()
+                        if int(current_time) % 300 == 0:  # Only log every 5 minutes
+                            print(f"❌ Error checking for drain events: {e}")
+                            import traceback
+                            traceback.print_exc()
                 
                 # Check for new discrepancies (every 60 seconds)
                 if current_time - last_discrepancy_check >= discrepancy_check_interval:
@@ -750,9 +794,14 @@ async def periodic_update():
                         except Exception as e:
                             # If rate limit, skip this cycle
                             if '429' in str(e) or 'rate limit' in str(e).lower():
-                                print(f"⚠️  Rate limit in discrepancy detection, skipping this cycle")
+                                if int(current_time) % 300 == 0:  # Only log every 5 minutes
+                                    print(f"⚠️  Rate limit in discrepancy detection, skipping this cycle")
                                 continue
-                            raise
+                            if int(current_time) % 300 == 0:  # Only log every 5 minutes
+                                print(f"⚠️ Error in discrepancy analysis (will retry next cycle): {e}")
+                                import traceback
+                                traceback.print_exc()
+                            continue
                         
                         drains: List[DrainEventDto] = []
                         for _, ca in analyses.items():
@@ -774,6 +823,7 @@ async def periodic_update():
                                 new_discrepancy_ids = current_discrepancy_ids - _LAST_DISCREPANCY_IDS
                                 
                                 if new_discrepancy_ids:
+                                    new_discrepancies_count = 0
                                     # Broadcast new discrepancies
                                     for disc in result.discrepancies:
                                         disc_key = (disc.ticket_id, disc.cauldron_id)
@@ -787,14 +837,23 @@ async def periodic_update():
                                                 "discrepancy_percent": float(disc.discrepancy_percent) if disc.discrepancy_percent is not None else 0.0,
                                                 "message": f"Ticket {disc.ticket_id} at {disc.cauldron_id}: {disc.discrepancy:+.1f}L difference ({disc.discrepancy_percent:.1f}%)"
                                             })
-                                            print(f"🚨 New discrepancy detected: {disc.severity} - {disc.cauldron_id} / {disc.ticket_id}")
+                                            new_discrepancies_count += 1
                                     
-                                    # Update stored discrepancy IDs
-                                    _LAST_DISCREPANCY_IDS = current_discrepancy_ids
+                                    # Only log summary, not individual discrepancies
+                                    if new_discrepancies_count > 0:
+                                        critical_count = sum(1 for d in result.discrepancies 
+                                                           if (d.ticket_id, d.cauldron_id) in new_discrepancy_ids 
+                                                           and d.severity == "critical")
+                                        warning_count = new_discrepancies_count - critical_count
+                                        print(f"🚨 Found {new_discrepancies_count} new discrepancy/discrepancies ({critical_count} critical, {warning_count} warning)")
+                                
+                                # Update stored discrepancy IDs (keep last 10000 to prevent memory issues)
+                                _LAST_DISCREPANCY_IDS = current_discrepancy_ids if len(current_discrepancy_ids) <= 10000 else set(list(current_discrepancy_ids)[-10000:])
                     except Exception as e:
-                        print(f"❌ Error checking for discrepancies: {e}")
-                        import traceback
-                        traceback.print_exc()
+                        if int(current_time) % 300 == 0:  # Only log every 5 minutes
+                            print(f"❌ Error checking for discrepancies: {e}")
+                            import traceback
+                            traceback.print_exc()
                 
             except Exception as e:
                 print(f"❌ Error in periodic update: {e}")

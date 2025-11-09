@@ -193,7 +193,15 @@ export default function useInit(){
         console.error('❌ Backend is not available. Please start the backend server.')
       })
 
+    // Initialize WebSocket connection
     const sock = initSocket()
-    return ()=> sock.close()
-  }, [])
+    
+    // Cleanup function
+    return () => {
+      if (sock) {
+        console.log('🔌 Closing WebSocket connection...')
+        sock.close()
+      }
+    }
+  }, [])  // Empty dependency array - only run once on mount
 }

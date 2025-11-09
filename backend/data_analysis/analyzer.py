@@ -75,8 +75,12 @@ class CauldronAnalyzer:
             # Step 2: Detect drain events
             drains = self.drain_detector.detect_drains(historical_data, cauldron_id)
             # Fallback: if none found, try a more permissive second pass
-            if not drains:
-                print(f"[Analyzer] No drains for {cauldron_id} with strict params; retrying with relaxed thresholds...")
+            # Only log if we have enough data points (to avoid spam for empty data)
+            if not drains and len(historical_data) > 10:
+                # Only log occasionally to reduce console spam
+                import random
+                if random.random() < 0.1:  # Log only 10% of the time
+                    print(f"[Analyzer] No drains for {cauldron_id} with strict params; retrying with relaxed thresholds...")
                 original = self.drain_detector
                 try:
                     self.drain_detector = DrainDetector(

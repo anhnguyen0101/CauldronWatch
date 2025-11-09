@@ -32,7 +32,9 @@ export default function Navbar(){
         >
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
-        <img src="https://avatars.dicebear.com/api/pixel-art-neutral/cauldron.svg" alt="avatar" className="w-8 h-8 rounded-full" />
+        <div className="w-8 h-8 rounded-full bg-neutral-800/60 flex items-center justify-center text-lg" title="User">
+          🧪
+        </div>
       </div>
     </header>
   )

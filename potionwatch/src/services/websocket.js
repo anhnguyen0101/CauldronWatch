@@ -4,23 +4,55 @@ const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
 export function startSocket(onMessage) {
   let ws = null
   let reconnectAttempts = 0
-  const maxReconnectAttempts = 5
+  const maxReconnectAttempts = 10  // Increased to allow more reconnection attempts
   let reconnectTimeout = null
+  let isConnecting = false
+  let isIntentionallyClosed = false  // Track if we intentionally closed the connection
 
   function connect() {
+    // Prevent multiple simultaneous connection attempts
+    if (isConnecting || (ws && ws.readyState === WebSocket.CONNECTING)) {
+      console.log('⏳ WebSocket connection already in progress, skipping...')
+      return
+    }
+    
+    // Don't reconnect if we intentionally closed
+    if (isIntentionallyClosed) {
+      console.log('🚫 WebSocket intentionally closed, not reconnecting')
+      return
+    }
+    
+    // Determine WebSocket URL (outside try block so it's accessible in error handlers)
+    let wsUrl
     try {
-      // Determine WebSocket URL
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const host = import.meta.env.VITE_WS_URL 
         ? new URL(import.meta.env.VITE_WS_URL).host
         : window.location.hostname + ':8000'
-      const wsUrl = import.meta.env.VITE_WS_URL || `${protocol}//${host}/ws`
+      wsUrl = import.meta.env.VITE_WS_URL || `${protocol}//${host}/ws`
+    } catch (e) {
+      console.error('❌ Error determining WebSocket URL:', e)
+      wsUrl = 'ws://localhost:8000/ws'  // Fallback URL
+    }
+    
+    try {
+      // Close existing connection if any
+      if (ws) {
+        try {
+          ws.close()
+        } catch (e) {
+          // Ignore errors when closing
+        }
+        ws = null
+      }
       
       console.log('🔌 Connecting to WebSocket:', wsUrl)
+      isConnecting = true
       ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
         console.log('✅ WebSocket connected')
+        isConnecting = false
         reconnectAttempts = 0
         onMessage({ type: 'connected', message: 'Connected to CauldronWatch' })
       }
@@ -81,33 +113,80 @@ export function startSocket(onMessage) {
       }
 
       ws.onerror = (error) => {
-        console.error('❌ WebSocket error:', error)
-        console.error('❌ WebSocket error details:', {
-          type: error.type,
-          target: error.target,
-          readyState: ws.readyState, // 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED
-          url: wsUrl
-        })
+        isConnecting = false
+        // Don't log errors if we're already closing or closed - onclose will handle it
+        if (ws && ws.readyState !== WebSocket.CLOSING && ws.readyState !== WebSocket.CLOSED) {
+          console.error('❌ WebSocket error:', error)
+          // Safely log error details - ws might be null or error object might not have all properties
+          try {
+            const readyState = ws?.readyState ?? 'N/A'
+            const states = { 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED' }
+            console.error('❌ WebSocket error details:', {
+              type: error?.type || 'unknown',
+              readyState: typeof readyState === 'number' ? states[readyState] : readyState,
+              url: wsUrl
+            })
+          } catch (e) {
+            // If logging fails, just log the basic error
+            console.error('❌ WebSocket error (unable to get details):', e)
+          }
+        }
         // Don't close immediately - let onclose handle it
       }
 
-      ws.onclose = () => {
-        console.log('🔌 WebSocket closed')
+      ws.onclose = (event) => {
+        isConnecting = false
+        const wasOpen = ws && ws.readyState === WebSocket.OPEN
+        console.log('🔌 WebSocket closed', {
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+          wasOpen: wasOpen
+        })
+        
         ws = null
         
-        // Attempt to reconnect
-        if (reconnectAttempts < maxReconnectAttempts) {
+        // Don't reconnect if we intentionally closed the connection
+        if (isIntentionallyClosed) {
+          console.log('🚫 WebSocket intentionally closed, not reconnecting')
+          return
+        }
+        
+        // Only reconnect if it was an unexpected close (not a clean close with code 1000)
+        // Code 1000 = normal closure
+        // Code 1001 = going away
+        // Code 1006 = abnormal closure (connection lost)
+        const shouldReconnect = event.code !== 1000 || !event.wasClean
+        
+        if (shouldReconnect && reconnectAttempts < maxReconnectAttempts) {
           reconnectAttempts++
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000) // Exponential backoff, max 30s
           console.log(`🔄 Reconnecting in ${delay/1000}s... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`)
-          reconnectTimeout = setTimeout(connect, delay)
-        } else {
+          reconnectTimeout = setTimeout(() => {
+            if (!isIntentionallyClosed) {
+              connect()
+            }
+          }, delay)
+        } else if (reconnectAttempts >= maxReconnectAttempts) {
           console.error('❌ Max reconnection attempts reached. Backend is not available.')
         }
       }
     } catch (error) {
+      isConnecting = false
       console.error('❌ WebSocket connection error:', error)
       console.error('❌ Backend is not available. Please start the backend server.')
+      
+      // Schedule reconnection attempt
+      if (reconnectAttempts < maxReconnectAttempts && !isIntentionallyClosed) {
+        reconnectAttempts++
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
+        console.log(`🔄 Will retry connection in ${delay/1000}s... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`)
+        reconnectTimeout = setTimeout(() => {
+          if (!isIntentionallyClosed) {
+            connect()
+          }
+        }, delay)
+      }
     }
   }
 
@@ -115,18 +194,34 @@ export function startSocket(onMessage) {
 
   return {
     close: () => {
+      isIntentionallyClosed = true
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout)
+        reconnectTimeout = null
       }
       if (ws) {
-        ws.close()
+        try {
+          ws.close(1000, 'Intentional close')  // Normal closure
+        } catch (e) {
+          // Ignore errors when closing
+        }
         ws = null
       }
+      isConnecting = false
     },
     send: (data) => {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(typeof data === 'string' ? data : JSON.stringify(data))
+        try {
+          ws.send(typeof data === 'string' ? data : JSON.stringify(data))
+        } catch (e) {
+          console.error('❌ Error sending WebSocket message:', e)
+        }
+      } else {
+        console.warn('⚠️  WebSocket is not open. Cannot send message.')
       }
+    },
+    isConnected: () => {
+      return ws && ws.readyState === WebSocket.OPEN
     }
   }
 }
