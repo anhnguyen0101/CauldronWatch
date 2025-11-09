@@ -33,16 +33,11 @@ export default function Overview(){
       </div>
 
       {/* Timeline bar full width */}
-      <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{duration:0.4}}>
-        <div className="card">
-          <div className="flex items-center gap-4">
-            {/* Timeline heatmap component */}
-            <div className="flex-1">
-              <div className="mb-2 text-sm text-gray-400">Timeline</div>
-              <div>
-                <TimelineHeatmap />
-              </div>
-            </div>
+      <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{duration:0.4}} className="min-w-0 w-full">
+        <div className="card min-w-0 w-full">
+          <div className="mb-2 text-sm text-gray-400">Timeline</div>
+          <div className="min-w-0 w-full">
+            <TimelineHeatmap />
           </div>
         </div>
       </motion.div>

@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import usePotionStore from '../store/usePotionStore'
 import { motion } from 'framer-motion'
-import { startMockSocket } from '../services/websocket'
 
 const statusColorMap = {
   normal: 'border-cyan-400 bg-cyan-700',
@@ -73,69 +72,42 @@ export default function TimelineHeatmap({ onCellClick } = {}){
     return ()=>{ if(timerRef.current){ clearInterval(timerRef.current); timerRef.current = null } }
   }, [playing, history])
 
-  // live socket subscription: collect incoming updates into minute-keyed columns
+  // Subscribe to store updates for live updates
+  // The main socket connection in useInit already updates the store's history
+  // This effect just ensures the timeline updates when history changes
   useEffect(()=>{
-    const minuteKey = (ts) => { const d = new Date(ts); return d.toISOString().slice(0,16) }
-    const MAX_POINTS = 20
-
-    const processEntry = (entry) => {
-      if(!isLive) return
-      const key = minuteKey(entry.timestamp ?? Date.now())
-      const map = columnsMapRef.current
-      let col = map.get(key)
-      if(!col){
-        col = { time: new Date(entry.timestamp ?? Date.now()).toLocaleTimeString(), cauldrons: [] }
-        map.set(key, col)
-      }
-      const existing = col.cauldrons.find(c => c.id === entry.cauldron)
-      const newMetrics = { id: entry.cauldron, name: entry.cauldron.toUpperCase(), status: entry.status, fillPercent: entry.fillPercent, drainVolume: entry.drainVolume, alertCount: entry.alertCount, discrepancy: entry.discrepancy }
-      if(existing) Object.assign(existing, newMetrics)
-      else col.cauldrons.push(newMetrics)
-
-      // enforce max points
-      while(map.size > MAX_POINTS){
-        const k = map.keys().next().value
-        map.delete(k)
-      }
-
-      const arr = Array.from(map.values())
-      setColumns(arr)
-
-      // mark updated cell briefly
-      const colIndex = arr.length - 1
-      setUpdatedCell({ colIndex, cauldronId: entry.cauldron })
-      setTimeout(()=> setUpdatedCell(null), 900)
-      // auto-scroll to rightmost
-      const el = scrollRef.current
-      if(el) el.scrollTo({ left: Math.max(0, el.scrollWidth - el.clientWidth), behavior: 'smooth' })
+    if(!isLive) return
+    
+    // History updates are already handled by the main useEffect above
+    // Just ensure we scroll to the rightmost column when new data arrives
+    const el = scrollRef.current
+    if(el && columns.length > 0){
+      setTimeout(()=>{
+        el.scrollTo({ left: Math.max(0, el.scrollWidth - el.clientWidth), behavior: 'smooth' })
+      }, 100)
     }
-
-    const wrapped = (msg) => {
-      // support mock that emits a batch of levels
-      if(msg && Array.isArray(msg.data)){
-        msg.data.forEach(u => processEntry({ timestamp: Date.now(), cauldron: u.id, fillPercent: u.level, status: 'normal', drainVolume: 0, alertCount: 0 }))
-      } else {
-        processEntry(msg)
-      }
-    }
-    const stop = startMockSocket(wrapped)
-    return ()=>{ if(stop && typeof stop.close === 'function') stop.close() }
-  }, [isLive])
+  }, [isLive, columns.length, history?.length])
 
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-3">
-          <button aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying(p => !p)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{playing ? '⏸' : '▶'}</button>
-          <button aria-label={isLive ? 'Pause live' : 'Resume live'} onClick={() => setIsLive(v => !v)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{isLive ? '⏸ Pause Live' : '▶ Resume Live'}</button>
-          <div className="text-sm text-gray-400">Heatmap (latest on right). Click a cell to apply snapshot.</div>
+    <div className="w-full min-w-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying(p => !p)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60 flex-shrink-0">{playing ? '⏸' : '▶'}</button>
+          <button aria-label={isLive ? 'Pause live' : 'Resume live'} onClick={() => setIsLive(v => !v)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60 flex-shrink-0 text-xs whitespace-nowrap">{isLive ? '⏸ Pause Live' : '▶ Resume Live'}</button>
+          <div className="text-sm text-gray-400 whitespace-nowrap">Heatmap (latest on right). Click a cell to apply snapshot.</div>
         </div>
-        <div className="text-sm text-neutral-400">Legend: <span className="inline-block w-3 h-3 bg-cyan-500 rounded-full ml-2 mr-1"/>Normal <span className="inline-block w-3 h-3 bg-sky-500 rounded-full ml-2 mr-1"/>Filling <span className="inline-block w-3 h-3 bg-orange-500 rounded-full ml-2 mr-1"/>Draining <span className="inline-block w-3 h-3 bg-red-500 rounded-full ml-2 mr-1"/>Overfill</div>
+        <div className="text-xs sm:text-sm text-neutral-400 flex flex-wrap items-center gap-1">
+          <span>Legend:</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 bg-cyan-500 rounded-full"/>Normal</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 bg-sky-500 rounded-full"/>Filling</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 bg-orange-500 rounded-full"/>Draining</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 bg-red-500 rounded-full"/>Overfill</span>
+        </div>
       </div>
 
-      <div className="relative w-full max-w-full overflow-hidden rounded-xl bg-neutral-900 border border-neutral-700" style={{ height: 'auto' }}>
-        <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
-          <div className="inline-flex min-w-max space-x-2 p-2">
+      <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-neutral-900 border border-neutral-700" style={{ height: 'auto' }}>
+        <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
+          <div className="inline-flex space-x-2 p-2" style={{ minWidth: 'min-content' }}>
             {columns.map((day, colIndex) => (
               <div key={day.time + colIndex} className={`pw-col flex-shrink-0 px-1`} style={{ minWidth: 96 }}>
                 <div className="sticky top-0 bg-transparent z-10 text-xs text-center text-neutral-300 mb-2">{day.time}</div>

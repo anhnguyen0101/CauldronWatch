@@ -1,93 +1,196 @@
-import React from 'react'
-import { Sparklines, SparklinesLine } from 'react-sparklines'
+import React, { useEffect, useState } from 'react'
+import { fetchDiscrepancies, detectDiscrepancies } from '../services/api'
+import { AlertTriangle, AlertCircle, Info } from 'lucide-react'
 
-export default function Discrepancies() {
-  const rows = [
-    {id: 1, cauldron: 'A1', ticket: 120, drain: 110, diff: 10, history: [5, 8, 12, 10, 6,4,3,4,7,1,2,9]},
-    {id: 2, cauldron: 'B4', ticket: 60, drain: 90, diff: -30, history: [15, 10, 5, 8, 8,9,5,4,3,2,6,9,12]},
-    {id: 3, cauldron: 'A5', ticket: 120, drain: 110, diff: 10, history: [5, 1, 12, 1, 16,4,8,4,7,11,2,9]},
-  ]
+export default function Discrepancies(){
+  const [discrepancies, setDiscrepancies] = useState([])
+  const [summary, setSummary] = useState({ total: 0, critical: 0, warning: 0, info: 0 })
+  const [loading, setLoading] = useState(true)
+  const [filterSeverity, setFilterSeverity] = useState(null)
+  const [filterCauldron, setFilterCauldron] = useState(null)
 
-  const getSeverity = (diff) => {
-    const abs = Math.abs(diff)
-    if (abs <= 10) return '🟢 OK'
-    if (abs <= 30) return '🟡 Warning'
-    return '🔴 Alert'
+  useEffect(() => {
+    async function loadDiscrepancies() {
+      try {
+        setLoading(true)
+        console.log('🔍 Loading discrepancies from Person 3...')
+        
+        // First, try to detect discrepancies (this populates the cache)
+        const detectResult = await detectDiscrepancies()
+        console.log('✅ Detection complete:', detectResult)
+        
+        // Then fetch with filters
+        const result = await fetchDiscrepancies(filterSeverity, filterCauldron)
+        console.log('📊 Fetched discrepancies:', result)
+        
+        setDiscrepancies(result.discrepancies || [])
+        setSummary({
+          total: result.total_discrepancies || 0,
+          critical: result.critical_count || 0,
+          warning: result.warning_count || 0,
+          info: result.info_count || 0
+        })
+      } catch (error) {
+        console.error('❌ Error loading discrepancies:', error)
+        setDiscrepancies([])
+        setSummary({ total: 0, critical: 0, warning: 0, info: 0 })
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    loadDiscrepancies()
+  }, [filterSeverity, filterCauldron])
+
+  const getSeverityIcon = (severity) => {
+    switch (severity) {
+      case 'critical':
+        return <AlertTriangle className="text-red-400" size={16} />
+      case 'warning':
+        return <AlertCircle className="text-yellow-400" size={16} />
+      case 'info':
+        return <Info className="text-blue-400" size={16} />
+      default:
+        return <Info className="text-gray-400" size={16} />
+    }
   }
 
-  // Find max value for scaling bars
-  const maxVal = Math.max(...rows.flatMap(r => [r.ticket, r.drain]))
+  const getSeverityColor = (severity) => {
+    switch (severity) {
+      case 'critical':
+        return 'text-red-400 bg-red-400/10 border-red-400/20'
+      case 'warning':
+        return 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20'
+      case 'info':
+        return 'text-blue-400 bg-blue-400/10 border-blue-400/20'
+      default:
+        return 'text-gray-400 bg-gray-400/10 border-gray-400/20'
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="card">
+        <h3 className="panel-title mb-4">Ticket–Drain Discrepancies</h3>
+        <div className="text-center py-8 text-gray-400">Loading discrepancies...</div>
+      </div>
+    )
+  }
 
   return (
-    <>
-      {/* Summary */}
-      <div className="flex flex-wrap gap-4 mb-6">
-        <div className="bg-gray-800 text-gray-200 p-4 rounded shadow flex-1 min-w-[180px]">
-          🧾 Total Discrepancies: {rows.length}
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="card">
+          <div className="text-sm text-gray-400 mb-1">Total</div>
+          <div className="text-2xl font-semibold">{summary.total}</div>
         </div>
-        <div className="bg-gray-800 text-gray-200 p-4 rounded shadow flex-1 min-w-[180px]">
-          ⚠️ Avg Diff: {Math.round(rows.reduce((sum, r) => sum + Math.abs(r.diff), 0) / rows.length)}L
+        <div className="card">
+          <div className="text-sm text-gray-400 mb-1 flex items-center gap-2">
+            <AlertTriangle className="text-red-400" size={14} />
+            Critical
+          </div>
+          <div className="text-2xl font-semibold text-red-400">{summary.critical}</div>
         </div>
-        <div className="bg-gray-800 text-gray-200 p-4 rounded shadow flex-1 min-w-[180px]">
-          🧯 Largest Overflow: {rows.reduce((prev,r)=>r.diff>prev.diff?r:prev,rows[0]).cauldron} ({Math.max(...rows.map(r=>r.diff))}L)
+        <div className="card">
+          <div className="text-sm text-gray-400 mb-1 flex items-center gap-2">
+            <AlertCircle className="text-yellow-400" size={14} />
+            Warning
+          </div>
+          <div className="text-2xl font-semibold text-yellow-400">{summary.warning}</div>
         </div>
-        <div className="bg-gray-800 text-gray-200 p-4 rounded shadow flex-1 min-w-[180px]">
-          🕳️ Drain Loss: {rows.reduce((prev,r)=>r.diff<prev.diff?r:prev,rows[0]).cauldron} ({Math.min(...rows.map(r=>r.diff))}L)
+        <div className="card">
+          <div className="text-sm text-gray-400 mb-1 flex items-center gap-2">
+            <Info className="text-blue-400" size={14} />
+            Info
+          </div>
+          <div className="text-2xl font-semibold text-blue-400">{summary.info}</div>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="card p-4 space-y-4">
-        <div className="overflow-x-auto">
-          <table className="w-full table-auto text-left">
-            <thead>
-              <tr className="text-gray-400 text-sm">
-                <th className="px-3 py-2">Cauldron</th>
-                <th className="px-3 py-2">Ticket</th>
-                <th className="px-3 py-2">Drain</th>
-                <th className="px-3 py-2">Diff</th>
-                <th className="px-3 py-2">Severity</th>
-                <th className="px-3 py-2">Trend</th>
-                <th className="px-3 py-2">Bar View</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.id} className="border-t border-neutral-800">
-                  <td className="px-3 py-3 text-gray-100">{r.cauldron}</td>
-                  <td className="px-3 py-3 text-gray-100">{r.ticket}</td>
-                  <td className="px-3 py-3 text-gray-100">{r.drain}</td>
-                  <td className={`px-3 py-3 ${r.diff > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {r.diff > 0 ? `+${r.diff}` : r.diff}
-                  </td>
-                  <td className="px-3 py-3">{getSeverity(r.diff)}</td>
-                  <td className="px-3 py-3">
-                    <Sparklines data={r.history} width={100} height={20}>
-                      <SparklinesLine color="blue" />
-                    </Sparklines>
-                  </td>
-                  <td className="px-3 py-3">
-                    {/* Combined horizontal bar */}
-                    <div className="flex h-4 w-full bg-gray-700 rounded overflow-hidden">
-                      <div
-                        className="bg-blue-500"
-                        style={{ width: `${(r.ticket / maxVal) * 100}%` }}
-                      />
-                      <div
-                        className="bg-orange-500"
-                        style={{
-                          width: `${(r.drain / maxVal) * 100}%`,
-                          marginLeft: `-${(r.ticket / maxVal) * 100}%` // overlap
-                        }}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Filters */}
+      <div className="card">
+        <div className="flex items-center gap-4 mb-4">
+          <h3 className="panel-title">Filters</h3>
+          <select
+            value={filterSeverity || ''}
+            onChange={(e) => setFilterSeverity(e.target.value || null)}
+            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm"
+          >
+            <option value="">All Severities</option>
+            <option value="critical">Critical</option>
+            <option value="warning">Warning</option>
+            <option value="info">Info</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Filter by Cauldron ID..."
+            value={filterCauldron || ''}
+            onChange={(e) => setFilterCauldron(e.target.value || null)}
+            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm flex-1"
+          />
         </div>
       </div>
-    </>
+
+      {/* Discrepancies Table */}
+      <div className="card">
+        <h3 className="panel-title mb-4">Discrepancies</h3>
+        {discrepancies.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            {summary.total === 0 
+              ? "No discrepancies found. All tickets match drain events perfectly!"
+              : "No discrepancies match the current filters."}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full table-auto text-left">
+              <thead>
+                <tr className="text-gray-400 text-sm border-b border-neutral-800">
+                  <th className="px-3 py-2">Severity</th>
+                  <th className="px-3 py-2">Cauldron</th>
+                  <th className="px-3 py-2">Ticket ID</th>
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Ticket Volume</th>
+                  <th className="px-3 py-2">Actual Drained</th>
+                  <th className="px-3 py-2">Difference</th>
+                  <th className="px-3 py-2">% Off</th>
+                </tr>
+              </thead>
+              <tbody>
+                {discrepancies.map((d, idx) => (
+                  <tr key={`${d.ticket_id}_${idx}`} className="border-t border-neutral-800 hover:bg-neutral-800/50 transition-colors">
+                    <td className="px-3 py-3">
+                      <div className={`flex items-center gap-2 px-2 py-1 rounded ${getSeverityColor(d.severity)}`}>
+                        {getSeverityIcon(d.severity)}
+                        <span className="text-xs font-medium capitalize">{d.severity}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-gray-100 font-mono text-sm">
+                      {d.cauldron_id?.replace('cauldron_', '').toUpperCase() || d.cauldron_id}
+                    </td>
+                    <td className="px-3 py-3 text-gray-300 font-mono text-xs">{d.ticket_id}</td>
+                    <td className="px-3 py-3 text-gray-300 text-sm">{d.date || '-'}</td>
+                    <td className="px-3 py-3 text-gray-100">{Math.round(d.ticket_volume || 0)} L</td>
+                    <td className="px-3 py-3 text-gray-100">{Math.round(d.actual_drained || 0)} L</td>
+                    <td className={`px-3 py-3 font-semibold ${
+                      (d.discrepancy || 0) > 0 ? 'text-green-400' : 
+                      (d.discrepancy || 0) < 0 ? 'text-red-400' : 'text-gray-400'
+                    }`}>
+                      {(d.discrepancy || 0) > 0 ? '+' : ''}{Math.round(d.discrepancy || 0)} L
+                    </td>
+                    <td className={`px-3 py-3 font-semibold ${
+                      Math.abs(d.discrepancy_percent || 0) > 20 ? 'text-red-400' : 
+                      Math.abs(d.discrepancy_percent || 0) > 5 ? 'text-yellow-400' : 'text-gray-400'
+                    }`}>
+                      {Math.abs(d.discrepancy_percent || 0).toFixed(1)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
