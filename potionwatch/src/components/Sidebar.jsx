@@ -29,7 +29,7 @@ export default function Sidebar() {
   }, [theme])
 
   return (
-    <aside className={`relative flex flex-col h-screen bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}>
+    <aside className={`relative flex flex-col h-full bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 flex-shrink-0 ${collapsed ? 'w-20' : 'w-64'}`}>
       {/* Logo and Name Section */}
       <div className="p-4 flex items-center justify-between border-b border-neutral-300 dark:border-neutral-800 gap-2">
         {!collapsed ? (
