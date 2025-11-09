@@ -26,6 +26,13 @@ export default function Overview(){
   // Memoize nodes array - only recreate when cauldrons, market, or lastUpdate changes
   // ✅ Include lastUpdate to ensure graph updates when timeline snapshots are applied
   const nodes = useMemo(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔄 Overview: Recomputing nodes (lastUpdate:', lastUpdate, ', cauldrons:', cauldrons.length, ')')
+      if (cauldrons.length > 0) {
+        console.log('   Sample cauldron:', { id: cauldrons[0].id, name: cauldrons[0].name, level: cauldrons[0].level })
+      }
+    }
+    
     const nodeList = cauldrons.map(c => ({
     id: c.cauldron_id || c.id || c.cauldronId,
     name: c.name || c.label || (`${c.cauldron_id || c.id}`),
