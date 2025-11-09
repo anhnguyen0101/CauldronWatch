@@ -911,20 +911,33 @@ async def detect_discrepancies(
             start_date_obj = start_dt.date() if start_dt else None
             end_date_obj = end_dt.date() if end_dt else None
             
+            print(f"🔍 Filtering {before_count} discrepancies to date range: {start_date_obj} to {end_date_obj}")
+            
             filtered_discrepancies = []
+            skipped_count = 0
             for d in result.discrepancies:
                 if not d.date:
+                    skipped_count += 1
                     continue
                 try:
-                    disc_date = datetime.strptime(d.date, "%Y-%m-%d").date()
+                    # Handle different date formats
+                    disc_date_str = d.date
+                    if 'T' in disc_date_str:
+                        disc_date_str = disc_date_str.split('T')[0]
+                    disc_date = datetime.strptime(disc_date_str, "%Y-%m-%d").date()
+                    
                     # Check if date is within range
                     if start_date_obj and disc_date < start_date_obj:
+                        skipped_count += 1
                         continue
                     if end_date_obj and disc_date > end_date_obj:
+                        skipped_count += 1
                         continue
                     filtered_discrepancies.append(d)
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as e:
                     # Skip discrepancies with invalid dates
+                    print(f"⚠️  Skipping discrepancy with invalid date format: {d.date} (error: {e})")
+                    skipped_count += 1
                     continue
             
             result.discrepancies = filtered_discrepancies
