@@ -311,33 +311,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
             </button>
           </div>
           
-<<<<<<< HEAD
-          <div className="text-sm text-gray-400">
-            Heatmap (live on right). Click a cell to apply snapshot.
-          </div>
-        </div>
-      </div>
 
-      <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-neutral-900 border border-neutral-700" style={{ height: 'auto' }}>
-        {isLoadingHistory && allColumns.length === 0 && (
-          <div className="flex items-center justify-center py-12 text-gray-400">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400 mx-auto mb-2"></div>
-              <div className="text-sm">Loading timeline data...</div>
-            </div>
-          </div>
-        )}
-        
-        <div
-          ref={scrollRef}
-          className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent"
-          style={{ maxWidth: '100%' }}
-        >
-          <div className="inline-flex space-x-2 p-2" style={{ minWidth: 'min-content' }}>
-            {allColumns.length === 0 && !isLoadingHistory && cauldrons.length > 0 && (
-              <div className="flex items-center justify-center py-8 text-gray-400 text-sm">
-                No timeline data available yet. Waiting for history...
-=======
           <div className="text-sm text-text-light dark:text-gray-400">Heatmap (latest on right). Click a cell to apply snapshot.</div>
         </div>
       </div>
@@ -345,69 +319,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
       <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-panel-light dark:bg-neutral-900 border border-border-light dark:border-neutral-700" style={{ height: 'auto' }}>
         <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
           <div className="inline-flex space-x-2 p-2" style={{ minWidth: 'min-content' }}>
-            {columns.map((day, colIndex) => (
-              <div key={day.time + colIndex} className={`pw-col flex-shrink-0 px-1`} style={{ minWidth: 96 }}>
-                <div className="sticky top-0 bg-transparent z-10 text-xs text-center text-text-light dark:text-neutral-300 mb-2">{day.time}</div>
-
-                <div className="grid gap-2" style={{ gridTemplateRows: `repeat(${cauldrons.length}, minmax(0, 1fr))` }}>
-                  {cauldrons.map((c, rowIndex) => {
-                    const m = getMetrics(day, c.id)
-                    
-                    // DEBUG: Log metrics for first few cells to diagnose
-                    if (rowIndex === 0 && colIndex < 3) {
-                      console.log(`🔍 Timeline Cell [${colIndex}] (${c.id}, ${day.time}):`, {
-                        hasMetrics: !!m,
-                        metricsLevel: m?.level,
-                        storeLevel: c.level,
-                        dayCauldronsCount: day.cauldrons?.length,
-                        dayCauldrons: day.cauldrons?.slice(0, 2)
-                      })
-                    }
-                    
-                    // Use historical snapshot level if available, otherwise fallback to store level
-                    // m?.level is the percentage from the historical snapshot
-                    const fill = m?.level ?? c.level ?? 0
-                    const status = m?.status || (fill > 95 ? 'overfill' : fill < 20 ? 'underfill' : 'normal')
-                    const colorClass = statusColorMap[status] || statusColorMap.normal
-                    const drain = m?.drainVolume ?? 0
-                    const discrepancy = m?.discrepancy ?? 0
-                    const alertCount = m?.alertCount ?? 0
-                    const isLatestCol = colIndex === (columns.length - 1)
-
-                    return (
-                      <div key={c.id} className={`${rowIndex % 2 === 0 ? 'bg-panel-light/0' : 'bg-panel-light/5'} rounded-md p-1`}> 
-                        <div
-                          onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHoveredCauldron(c.id); setHoveredCell({ colIndex, cauldronId: c.id, rect: r, metrics: m, day }) }}
-                          onMouseLeave={() => { setHoveredCauldron(null); setHoveredCell(null) }}
-                          onClick={() => handleCellClick(colIndex, c.id)}
-                          role="button"
-                          className={`flex flex-col items-center justify-center text-text-light dark:text-white text-xs w-16 h-16 rounded-md border ${colorClass} ${isLatestCol ? 'ring-2 ring-accent/80 shadow' : ''} ${hoveredCauldron === c.id ? 'scale-105 ring-2 ring-accent/50' : ''} cursor-pointer relative`}
-                          title={`${c.name}\n${fill}% — ${drain}L`}
-                        >
-                          <div className="text-[10px] font-medium">{c.name}</div>
-                          <div className="text-sm font-semibold mt-1">{fill}%</div>
-                          <div className="text-[10px] text-text-light dark:text-neutral-200 mt-1">{drain}L</div>
-                          {alertCount > 0 && (
-                            <motion.div
-                              initial={{ scale: 0.8, opacity: 0 }}
-                              animate={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { scale: [1.3, 1, 1.15, 1], x: [0, -3, 3, 0], opacity: 1 } : { scale: [1.05, 1, 1.05], opacity: 1 } }
-                              transition={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { duration: 0.9 } : { repeat: Infinity, duration: 1.2 } }
-                              className={`absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs text-white font-bold flex items-center justify-center shadow-lg ring-2 ${alertCount >= 3 ? 'bg-orange-500 ring-orange-300' : 'bg-rose-500 ring-red-300'}`}
-                              title={`${alertCount} unresolved alerts`}
-                            >
-                              {alertCount}
-                            </motion.div>
-                          )}
-                          {discrepancy > 0 && (<div className="absolute inset-0 rounded-md ring-2 ring-red-500/60 pointer-events-none" />)}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
->>>>>>> 1652a26 (make all pages align with lightmode)
-              </div>
-            )}
-            
+           
             {allColumns.map((column, colIndex) => {
               const isLiveCol = column.isLive === true
               

@@ -50,7 +50,7 @@ export default function TicketsTable() {
   return (
     <div className="card">
       <h3 className="panel-title mb-3">Tickets vs Drains</h3>
-<<<<<<< HEAD
+
 
       {loading ? (
         <div className="text-gray-400 text-sm py-4">Loading...</div>
@@ -109,32 +109,6 @@ export default function TicketsTable() {
           </div>
         </div>
       )}
-=======
-      <div className="overflow-auto">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="text-text-light dark:text-gray-400 text-xs uppercase">
-              <th className="px-3 py-2">Date</th>
-              <th className="px-3 py-2">Cauldron</th>
-              <th className="px-3 py-2">Ticket Volume</th>
-              <th className="px-3 py-2">Drain</th>
-              <th className="px-3 py-2">Difference</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r=> (
-              <tr key={r.id} className="border-t border-border hover:bg-neutral-700/50 transition-colors">
-                <td className="px-3 py-3 text-text-light dark:text-gray-100">{r.date}</td>
-                <td className="px-3 py-3 text-text-light dark:text-gray-100">{r.cauldron}</td>
-                <td className="px-3 py-3 text-text-light dark:text-gray-100">{r.ticket}</td>
-                <td className="px-3 py-3 text-text-light dark:text-gray-100">{r.drain}</td>
-                <td className={`px-3 py-3 ${r.diff.includes('-') ? 'text-red-400' : 'text-green-400'}`}>{r.diff}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
->>>>>>> 1652a26 (make all pages align with lightmode)
-    </div>
   )
 }
