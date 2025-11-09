@@ -308,25 +308,6 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
         </div>
         
         <div className="flex items-center gap-3 flex-wrap">
-<<<<<<< Updated upstream
-          <button
-            aria-label={playing ? 'Pause' : 'Play'}
-            onClick={() => setPlaying(p => !p)}
-            className="p-2 rounded-md bg-panel-light/50 dark:bg-panel-dark/50 hover:shadow-sm"
-          >
-            {playing ? '⏸' : '▶'}
-          </button>
-          
-          <button
-            aria-label={isLive ? 'Pause live' : 'Resume live'}
-            onClick={() => setIsLive(v => !v)}
-            className="p-2 rounded-md bg-panel-light/50 dark:bg-panel-dark/50 hover:shadow-sm"
-          >
-            {isLive ? '⏸ Pause Live' : '▶ Resume Live'}
-          </button>
-          
-=======
->>>>>>> Stashed changes
           {/* Time Range Selector */}
           <div className="flex items-center gap-2">
             <label className="text-sm text-text-light dark:text-gray-400">Time Range:</label>
@@ -334,11 +315,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value)}
               disabled={isLoadingHistory}
-<<<<<<< Updated upstream
-              className="px-3 py-1.5 text-sm rounded-md bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50 disabled:cursor-not-allowed"
-=======
               className="px-3 py-1.5 text-sm rounded-md bg-panel-light dark:bg-neutral-800/60 border border-border-light dark:border-neutral-700 text-text-light dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-800/80 focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
->>>>>>> Stashed changes
             >
               {timeRangeOptions.map(option => (
                 <option key={option.value} value={option.value}>
@@ -356,18 +333,6 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                 (Updated {lastFetchTime.toLocaleTimeString()})
               </span>
             )}
-<<<<<<< Updated upstream
-            
-            <button
-              onClick={handleRefresh}
-              disabled={isLoadingHistory}
-              className="px-2 py-1.5 text-sm rounded-md bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-              title="Refresh timeline data"
-            >
-              <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
-            </button>
-=======
->>>>>>> Stashed changes
           </div>
 
           {/* Timeline Playback Button - Distinct styling */}
@@ -408,15 +373,10 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
         </div>
       </div>
 
-<<<<<<< Updated upstream
-      <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark" style={{ height: 'auto' }}>
-        <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
-=======
       <div className="text-xs text-text-light/70 dark:text-gray-400 mb-2">Heatmap (latest on right). Click a cell to apply snapshot.</div>
 
       <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-panel-light dark:bg-neutral-900 border border-border-light dark:border-neutral-700" style={{ height: 'auto' }}>
         <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
->>>>>>> Stashed changes
           <div className="inline-flex space-x-2 p-2" style={{ minWidth: 'min-content' }}>
            
             {allColumns.map((column, colIndex) => {
