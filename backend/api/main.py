@@ -1146,10 +1146,10 @@ async def periodic_update():
                         enriched_updates.append(update_dict)
                     
                     if enriched_updates:
-                    await ws_manager.broadcast_cauldron_update({
-                        "cauldrons": enriched_updates,
-                        "timestamp": datetime.now().isoformat()
-                    })
+                        await ws_manager.broadcast_cauldron_update({
+                            "cauldrons": enriched_updates,
+                            "timestamp": datetime.now().isoformat()
+                        })
                 else:
                     # Log when no levels are available
                     if int(current_time) % 60 == 0:  # Only log every minute to avoid spam
