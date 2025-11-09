@@ -448,6 +448,39 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
   )
 }
 
-// Memoize component to prevent unnecessary re-renders
-// Using default shallow comparison - parent component (Overview.jsx) creates new objects on updates
-export default React.memo(PotionNetworkGraph)
+// Custom comparison function for React.memo
+// Only re-render if nodes/links actually changed (by content, not just reference)
+function arePropsEqual(prevProps, nextProps) {
+  const prev = prevProps.data
+  const next = nextProps.data
+  
+  // Quick reference check
+  if (prev === next) return true
+  
+  // Check nodes length
+  if (prev.nodes?.length !== next.nodes?.length) return false
+  
+  // Check links length
+  if (prev.links?.length !== next.links?.length) return false
+  
+  // Check if any node levels changed (this is what updates most frequently)
+  // Only compare IDs and fillPercent for performance
+  const prevNodeMap = new Map(prev.nodes.map(n => [n.id, n.fillPercent]))
+  const nextNodeMap = new Map(next.nodes.map(n => [n.id, n.fillPercent]))
+  
+  // If node count changed, re-render
+  if (prevNodeMap.size !== nextNodeMap.size) return false
+  
+  // Check if any fillPercent values changed
+  for (const [id, fillPercent] of prevNodeMap) {
+    if (nextNodeMap.get(id) !== fillPercent) {
+      return false // Level changed - re-render
+    }
+  }
+  
+  // If we get here, nodes and links are the same (by content)
+  // Only re-render if className changed
+  return prevProps.className === nextProps.className
+}
+
+export default React.memo(PotionNetworkGraph, arePropsEqual)

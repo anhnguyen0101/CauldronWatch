@@ -405,6 +405,7 @@ class CacheManager:
             all_coords.append(('market', market.id, market.latitude, market.longitude))
         
         if not all_coords:
+            # No coordinates available - cannot calculate positions
             return
         
         # Calculate bounds
@@ -439,6 +440,7 @@ class CacheManager:
         boundsLatRange = bounds['maxLat'] - bounds['minLat']
         boundsLngRange = bounds['maxLng'] - bounds['minLng']
         
+        updated_count = 0
         for node_type, node_id, lat, lng in all_coords:
             # Normalize to 0-1 range
             if boundsLngRange > 0.001:
@@ -452,19 +454,26 @@ class CacheManager:
             else:
                 normalized_y = 0.5
             
-            # Update node
+            # Update node in database
             if node_type == 'cauldron':
                 cauldron = self.db.query(CauldronCache).filter_by(id=node_id).first()
                 if cauldron:
                     cauldron.x = normalized_x
                     cauldron.y = normalized_y
+                    updated_count += 1
             elif node_type == 'market':
                 market_obj = self.db.query(MarketCache).filter_by(id=node_id).first()
                 if market_obj:
                     market_obj.x = normalized_x
                     market_obj.y = normalized_y
+                    updated_count += 1
         
+        # Commit all x, y coordinate updates to database
         self.db.commit()
+        
+        # Log success (only if updating multiple nodes to avoid spam)
+        if updated_count > 0 and len(all_coords) > 5:
+            print(f"   ✅ Calculated and saved x, y coordinates for {updated_count} nodes")
     
     def haversine_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """

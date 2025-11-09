@@ -44,7 +44,13 @@ export default function useInit(){
         }
       })
       
-      console.log('✅ Transformed cauldrons:', transformed.length, transformed[0])
+      console.log('✅ Transformed cauldrons:', transformed.length)
+      // Debug: Check if x, y coordinates are present
+      const withXY = transformed.filter(c => typeof c.x === 'number' && typeof c.y === 'number').length
+      console.log(`📐 Cauldrons with precomputed x, y coordinates: ${withXY}/${transformed.length}`)
+      if (withXY < transformed.length) {
+        console.warn('⚠️  Some cauldrons missing x, y coordinates - network visualization will be slower')
+      }
       
       // Get current store state to check for pending updates
       const currentStore = usePotionStore.getState()
@@ -61,7 +67,37 @@ export default function useInit(){
         }
       }
       
-      // Load latest levels
+      // ✅ FIX: Load market and network IMMEDIATELY after cauldrons (don't wait for levels)
+      // Market and network are static/semi-static and needed for graph visualization
+      Promise.all([fetchNetwork(), fetchMarket()]).then(([networkData, marketData]) => {
+        if (networkData && Array.isArray(networkData.edges)) {
+          usePotionStore.getState().setLinks(networkData.edges)
+          console.log(`🌐 Loaded ${networkData.edges.length} network edges`)
+        }
+        if (marketData) {
+          // Ensure market has x, y coordinates if available
+          const marketWithXY = {
+            ...marketData,
+            x: marketData.x,
+            y: marketData.y,
+            latitude: marketData.latitude ?? marketData.lat,
+            longitude: marketData.longitude ?? marketData.lng,
+            lat: marketData.latitude ?? marketData.lat,
+            lng: marketData.longitude ?? marketData.lng
+          }
+          usePotionStore.getState().setMarket(marketWithXY)
+          console.log('🏪 Loaded market data:', marketData.name || marketData.id)
+          if (typeof marketData.x === 'number' && typeof marketData.y === 'number') {
+            console.log('✅ Market has precomputed x, y coordinates')
+          } else {
+            console.warn('⚠️  Market missing x, y coordinates - network visualization will be slower')
+          }
+        }
+      }).catch(e => {
+        console.warn('Unable to load network/market at boot:', e)
+      })
+      
+      // Load latest levels (in parallel with market/network)
       return fetchLatestLevels()
   }).then(async levels => {
         if (!levels) {
@@ -154,22 +190,6 @@ export default function useInit(){
             )
             console.log(`📊 Average level: ${avgLevel}%`)
             console.log(`📊 All cauldron levels:`, store.cauldrons.map(c => `${c.id}: ${c.level || 0}%`))
-          }
-          
-          // Load network and market data (parallel) so the graph can render live edges
-          // Then load initial history AFTER cauldrons and levels are loaded
-          try {
-            const [networkData, marketData] = await Promise.all([fetchNetwork(), fetchMarket()])
-            if (networkData && Array.isArray(networkData.edges)) {
-              usePotionStore.getState().setLinks(networkData.edges)
-              console.log(`🌐 Loaded ${networkData.edges.length} network edges`)
-            }
-            if (marketData) {
-              usePotionStore.getState().setMarket(marketData)
-              console.log('🏪 Loaded market data:', marketData)
-            }
-          } catch (e) {
-            console.warn('Unable to load network/market at boot:', e)
           }
 
           // This ensures history snapshots can reference the loaded cauldrons

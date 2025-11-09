@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import MapView from '../components/MapView'
 import PotionNetworkGraph from '../components/PotionNetworkGraph'
@@ -10,6 +10,8 @@ import usePotionStore from '../store/usePotionStore'
 
 export default function Overview(){
   const cauldrons = usePotionStore(s => s.cauldrons)
+  // ✅ Subscribe to lastUpdate to force re-render when timeline snapshots are applied
+  const lastUpdate = usePotionStore(s => s.lastUpdate)
   const stats = [
     {title: 'Cauldrons', value: cauldrons.length},
     {title: 'Alerts', value: usePotionStore.getState().alerts.length},
@@ -21,53 +23,47 @@ export default function Overview(){
   const links = usePotionStore(s => s.links)
   const market = usePotionStore(s => s.market)
 
-  // Build data object expected by PotionNetworkGraph ({ nodes, links })
-  // Use precomputed x, y coordinates from backend (normalized 0-1)
-  const nodes = cauldrons.map(c => {
-    return {
-      id: c.cauldron_id || c.id || c.cauldronId,
-      name: c.name || c.label || (`${c.cauldron_id || c.id}`),
-      // convert store level (0..100) to fillPercent for graph
-      fillPercent: c.level ?? c.fillPercent ?? 0,
-      status: c.status || 'normal',
-      // Use precomputed x, y coordinates from backend (normalized 0-1)
-      // These are calculated once on the backend and stored in the database
+  // Memoize nodes array - only recreate when cauldrons, market, or lastUpdate changes
+  // ✅ Include lastUpdate to ensure graph updates when timeline snapshots are applied
+  const nodes = useMemo(() => {
+    const nodeList = cauldrons.map(c => ({
+    id: c.cauldron_id || c.id || c.cauldronId,
+    name: c.name || c.label || (`${c.cauldron_id || c.id}`),
+    fillPercent: c.level ?? c.fillPercent ?? 0,
+    status: c.status || 'normal',
       x: typeof c.x === 'number' ? c.x : undefined,
       y: typeof c.y === 'number' ? c.y : undefined,
-      // Also include lat/lng for backward compatibility and MapView
       lat: c.latitude ?? c.lat,
       lng: c.longitude ?? c.lng,
       latitude: c.latitude ?? c.lat,
       longitude: c.longitude ?? c.lng,
-      isMarket: false
-    }
-  })
+    isMarket: false
+  }))
 
   if (market) {
-    nodes.push({
+      nodeList.push({
       id: market.id || 'market_001',
-      name: market.name || 'Enchanted Market',
+        name: market.name || 'Enchanted Market',
       fillPercent: 0,
       status: 'normal',
-      // Use precomputed x, y coordinates from backend (normalized 0-1)
-      x: typeof market.x === 'number' ? market.x : undefined,
-      y: typeof market.y === 'number' ? market.y : undefined,
-      // Also include lat/lng for backward compatibility
-      lat: market.latitude ?? market.lat,
-      lng: market.longitude ?? market.lng,
-      latitude: market.latitude ?? market.lat,
-      longitude: market.longitude ?? market.lng,
+        x: typeof market.x === 'number' ? market.x : undefined,
+        y: typeof market.y === 'number' ? market.y : undefined,
+        lat: market.latitude ?? market.lat,
+        lng: market.longitude ?? market.lng,
+        latitude: market.latitude ?? market.lat,
+        longitude: market.longitude ?? market.lng,
       isMarket: true
     })
   }
 
-  // Convert backend link cost (HH:MM:SS or minutes) to travel_time_minutes expected by the graph
+    return nodeList
+  }, [cauldrons, market, lastUpdate]) // ✅ Include lastUpdate to trigger updates on timeline snapshots
+
+  // Memoize link parsing - only recreate when links change
   const parseCostToMinutes = (cost) => {
     if (cost == null) return null
     if (typeof cost === 'number') return cost
-    // if already a numeric string
     if (!isNaN(Number(cost))) return Number(cost)
-    // format like 00:45:00 or 0:45:00
     const parts = String(cost).split(':').map(p => Number(p))
     if (parts.length === 3) {
       return parts[0]*60 + parts[1] + parts[2]/60
@@ -78,15 +74,21 @@ export default function Overview(){
     return null
   }
 
-  const mappedLinks = (links || []).map(l => ({
+  const mappedLinks = useMemo(() => {
+    return (links || []).map(l => ({
     from: l.from || l.node_id || l.source,
     to: l.to || l.node_id || l.target,
     travel_time_minutes: parseCostToMinutes(l.cost || l.travel_time_minutes || l.time || null),
     distance: l.distance ?? null,
     weight: l.weight ?? null
   }))
+  }, [links]) // Only recreate when links change
 
-  const dataProp = { nodes, links: mappedLinks }
+  // Memoize data prop - only recreate when nodes or links change
+  const dataProp = useMemo(() => ({ 
+    nodes, 
+    links: mappedLinks 
+  }), [nodes, mappedLinks])
 
   return (
     <div className="space-y-6">

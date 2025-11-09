@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useMemo } from 'react'
 import bgDark from '../assets/potion_network_bg_dark.png'
 import bgLight from '../assets/potion_network_bg_light.png'
 
@@ -9,7 +9,7 @@ const statusColor = {
   overfill: '#ef4444'
 }
 
-export default function PotionNetworkSVG({ 
+function PotionNetworkSVG({ 
   cauldrons: propCauldrons = [], 
   links: propLinks = [],
   market: propMarket = null 
@@ -19,6 +19,19 @@ export default function PotionNetworkSVG({
 
   const ref = useRef(null)
   const [dims, setDims] = useState({ width: 800, height: 420 })
+  
+  // Debug: Log if precomputed coordinates are present (only in development)
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const cauldronsWithXY = propCauldrons.filter(c => typeof c.x === 'number' && typeof c.y === 'number').length
+      const marketHasXY = !propMarket || (typeof propMarket.x === 'number' && typeof propMarket.y === 'number')
+      if (cauldronsWithXY === propCauldrons.length && marketHasXY && propCauldrons.length > 0) {
+        console.log('✅ PotionNetworkSVG: All nodes have precomputed x, y coordinates - using fast path')
+      } else {
+        console.warn(`⚠️  PotionNetworkSVG: Using slow path - ${cauldronsWithXY}/${propCauldrons.length} cauldrons have x, y, market: ${marketHasXY}`)
+      }
+    }
+  }, [propCauldrons, propMarket])
 
   useEffect(()=>{
     const el = ref.current
@@ -42,6 +55,13 @@ export default function PotionNetworkSVG({
   const links = propLinks || []
   const market = propMarket
 
+  // Check if all nodes have precomputed x, y coordinates (FASTEST - skip all calculations!)
+  const allNodesHaveXY = useMemo(() => {
+    const cauldronsHaveXY = cauldrons.every(c => typeof c.x === 'number' && typeof c.y === 'number')
+    const marketHasXY = !market || (typeof market.x === 'number' && typeof market.y === 'number')
+    return cauldrons.length > 0 && cauldronsHaveXY && marketHasXY
+  }, [cauldrons, market])
+
   // Helper: Get latitude/longitude from node (supports both formats)
   const getLatLng = (node) => {
     const lat = node.latitude ?? node.lat
@@ -50,7 +70,7 @@ export default function PotionNetworkSVG({
   }
 
   // Helper: Convert latitude/longitude to SVG coordinates
-  const latLngToXY = (lat, lng, bounds) => {
+  const latLngToXY = useMemo(() => (lat, lng, bounds) => {
     if (!bounds || bounds.minLat === bounds.maxLat && bounds.minLng === bounds.maxLng) {
       // All points are the same or no bounds, center them
       return { x: viewW / 2, y: viewH / 2 }
@@ -65,10 +85,15 @@ export default function PotionNetworkSVG({
     const y = margin + normalizedY * (viewH - 2 * margin)
     
     return { x, y }
-  }
+  }, [viewW, viewH, margin])
 
-  // Calculate bounds from all nodes (cauldrons + market)
-  const calculateBounds = () => {
+  // Calculate bounds from all nodes (cauldrons + market) - ONLY if needed (no precomputed coords)
+  const bounds = useMemo(() => {
+    // If all nodes have precomputed x, y, skip bounds calculation entirely!
+    if (allNodesHaveXY) {
+      return null
+    }
+    
     const allNodes = [...cauldrons]
     if (market) {
       const marketCoords = getLatLng(market)
@@ -101,10 +126,9 @@ export default function PotionNetworkSVG({
       minLng: Math.min(...lngs) - lngRange * padding,
       maxLng: Math.max(...lngs) + lngRange * padding
     }
-  }
+  }, [allNodesHaveXY, cauldrons, market])
 
-  const bounds = calculateBounds()
-  const hasRealCoords = bounds != null && (
+  const hasRealCoords = bounds != null && !allNodesHaveXY && (
     cauldrons.some(c => {
       const coords = getLatLng(c)
       return coords.lat != null && coords.lng != null
@@ -133,44 +157,105 @@ export default function PotionNetworkSVG({
   const layoutMargin = Math.max(32, Math.min(viewW, viewH) * 0.12)
   const layoutRadius = Math.max(60, Math.min((Math.min(viewW, viewH) / 2) - layoutMargin, (viewW / 2) - layoutMargin)) - radius * 2
 
-  const autoPositions = cauldrons.map((c, i) => {
-    const a = -Math.PI / 2 + (i * (2 * Math.PI / count))
-    const x = centerX + layoutRadius * Math.cos(a)
-    const y = centerY + layoutRadius * Math.sin(a)
-    return { x, y, angle: a }
-  })
+  const autoPositions = useMemo(() => {
+    return cauldrons.map((c, i) => {
+      const a = -Math.PI / 2 + (i * (2 * Math.PI / count))
+      const x = centerX + layoutRadius * Math.cos(a)
+      const y = centerY + layoutRadius * Math.sin(a)
+      return { x, y, angle: a }
+    })
+  }, [cauldrons, count, centerX, centerY, layoutRadius])
 
-  // Compute position: use real coordinates if available, otherwise fallback to circular layout
-  const pos = (node) => {
-    // Try to use real coordinates first
-    if (hasRealCoords && bounds) {
-      const coords = getLatLng(node)
-      if (coords.lat != null && coords.lng != null) {
-        return latLngToXY(coords.lat, coords.lng, bounds)
+  // Pre-compute all node positions - PRIORITY: Use precomputed x, y coordinates (FASTEST!)
+  const nodePositions = useMemo(() => {
+    const positionMap = new Map()
+
+    // Priority 1: Use precomputed x, y coordinates from backend (normalized 0-1)
+    // These are calculated once on the backend - fastest option!
+    if (allNodesHaveXY) {
+      cauldrons.forEach(node => {
+        if (typeof node.x === 'number' && typeof node.y === 'number') {
+          // Backend provides normalized coordinates (0-1), scale to viewBox
+          // Apply margin to keep nodes away from edges
+          positionMap.set(node.id, {
+            x: margin + node.x * (viewW - 2 * margin),
+            y: margin + node.y * (viewH - 2 * margin)
+          })
+        }
+      })
+      
+      // Market position
+      if (market && typeof market.x === 'number' && typeof market.y === 'number') {
+        positionMap.set(market.id || 'market', {
+          x: margin + market.x * (viewW - 2 * margin),
+          y: margin + market.y * (viewH - 2 * margin)
+        })
+      }
+      
+      return positionMap
+    }
+
+    // Priority 2: Fallback to lat/lng calculation (only if x, y not available)
+    cauldrons.forEach(node => {
+      // Check if this node has precomputed coordinates first
+      if (typeof node.x === 'number' && typeof node.y === 'number') {
+        positionMap.set(node.id, {
+          x: margin + node.x * (viewW - 2 * margin),
+          y: margin + node.y * (viewH - 2 * margin)
+        })
+        return
+      }
+      
+      // Fallback to lat/lng
+      if (hasRealCoords && bounds) {
+        const coords = getLatLng(node)
+        if (coords.lat != null && coords.lng != null) {
+          positionMap.set(node.id, latLngToXY(coords.lat, coords.lng, bounds))
+          return
+        }
+      }
+      
+      // Fallback to circular layout
+      const idx = cauldrons.findIndex(x => x.id === node.id)
+      if (idx >= 0 && autoPositions[idx]) {
+        positionMap.set(node.id, autoPositions[idx])
+      }
+    })
+    
+    // Market position
+    if (market) {
+      if (typeof market.x === 'number' && typeof market.y === 'number') {
+        positionMap.set(market.id || 'market', {
+          x: margin + market.x * (viewW - 2 * margin),
+          y: margin + market.y * (viewH - 2 * margin)
+        })
+      } else if (hasRealCoords && bounds) {
+        const coords = getLatLng(market)
+        if (coords.lat != null && coords.lng != null) {
+          positionMap.set(market.id || 'market', latLngToXY(coords.lat, coords.lng, bounds))
+        } else {
+          positionMap.set(market.id || 'market', { x: centerX, y: centerY })
+        }
+      } else {
+        positionMap.set(market.id || 'market', { x: centerX, y: centerY })
       }
     }
-    
-    // Fallback to circular layout
-    const idx = cauldrons.findIndex(x => x.id === node.id)
-    if (idx >= 0 && autoPositions[idx]) {
-      return autoPositions[idx]
-    }
-    
-    // Final fallback: interpret percentage coords (0-100) to view coords
-    return { 
-      x: clamp((Number(node.x || 0) / 100) * viewW, 8, viewW - 8), 
-      y: clamp((Number(node.y || 0) / 100) * viewH, 12, viewH - 12) 
-    }
+
+    return positionMap
+  }, [allNodesHaveXY, cauldrons, market, viewW, viewH, margin, hasRealCoords, bounds, latLngToXY, autoPositions, centerX, centerY])
+
+  // Optimized pos function - O(1) lookup from precomputed positions
+  const pos = (node) => {
+    return nodePositions.get(node.id) || { x: centerX, y: centerY }
   }
 
-  // Market position
-  const marketPos = market && hasRealCoords && bounds ? (() => {
-    const coords = getLatLng(market)
-    if (coords.lat != null && coords.lng != null) {
-      return latLngToXY(coords.lat, coords.lng, bounds)
+  // Market position - use precomputed position
+  const marketPos = useMemo(() => {
+    if (market) {
+      return nodePositions.get(market.id || 'market') || { x: centerX, y: centerY }
     }
     return { x: centerX, y: centerY }
-  })() : { x: centerX, y: centerY }
+  }, [market, nodePositions, centerX, centerY])
 
   const pathFor = (a,b) => {
     const pa = pos(a)
@@ -371,11 +456,11 @@ export default function PotionNetworkSVG({
           const aura = hexToRgba(color, 0.25)
           
           // Label positioning: offset outward from node center
-          // For real coordinates, use a simple downward offset
+          // For precomputed coordinates or real coordinates, use a simple downward offset
           // For circular layout, offset radially outward
           let labelX, labelY
-          if (hasRealCoords) {
-            // Simple downward offset for real coordinates
+          if (allNodesHaveXY || hasRealCoords) {
+            // Simple downward offset for real/precomputed coordinates
             labelX = 0
             labelY = radius + 14
           } else {
@@ -436,3 +521,6 @@ export default function PotionNetworkSVG({
     </div>
   )
 }
+
+// Memoize component to prevent unnecessary re-renders
+export default React.memo(PotionNetworkSVG)

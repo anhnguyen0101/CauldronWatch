@@ -68,20 +68,10 @@ const usePotionStore = create((set, get) => ({
 
   setCauldrons: (cauldrons) => set(state => ({ cauldrons })),
 
-  updateCauldronLevels: (updates) => set(state => {
-    // updates is an array of {id, level} objects
-    const updateMap = new Map(updates.map(u => [u.id, u.level]))
-    return {
-      cauldrons: state.cauldrons.map(c => {
-        const newLevel = updateMap.get(c.id)
-        return newLevel !== undefined ? {...c, level: newLevel} : c
-      })
-    }
-  }),
-
   setSelectedHistoryIndex: (index) => set(state => ({ selectedHistoryIndex: index })),
 
   // Apply a historical snapshot to the live cauldrons view (simple mapping)
+  // ✅ FIX: Add lastUpdate timestamp to trigger graph re-renders
   applyHistorySnapshot: (index) => {
     const history = get().history
     if(!history || index == null || index < 0 || index >= history.length) return
@@ -94,7 +84,8 @@ const usePotionStore = create((set, get) => ({
           const s = byId[c.id]
           if(!s) return c
           return { ...c, level: Math.max(0, Math.min(100, s.level ?? s.fillPercent ?? c.level)) }
-        })
+        }),
+        lastUpdate: Date.now() // ✅ Trigger graph re-render
       }))
       return
     }
@@ -105,7 +96,8 @@ const usePotionStore = create((set, get) => ({
       cauldrons: state.cauldrons.map((c, i) => ({
         ...c,
         level: Math.max(0, Math.min(100, Math.round(base + ((i - state.cauldrons.length/2) * 6))))
-      }))
+      })),
+      lastUpdate: Date.now() // ✅ Trigger graph re-render
     }))
   },
 
@@ -140,16 +132,40 @@ const usePotionStore = create((set, get) => ({
   }),
 
   pushHistorySnapshot: (snapshot) => {
-    console.log(`📜 pushHistorySnapshot called:`, {
-      time: snapshot.time,
-      hasCauldrons: !!snapshot.cauldrons,
-      cauldronsCount: snapshot.cauldrons?.length || 0,
-      avgLevel: snapshot.avgLevel,
-      snapshot: snapshot
-    })
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`📜 pushHistorySnapshot called:`, {
+        time: snapshot.time,
+        timestamp: snapshot.timestamp,
+        hasCauldrons: !!snapshot.cauldrons,
+        cauldronsCount: snapshot.cauldrons?.length || 0,
+        avgLevel: snapshot.avgLevel
+      })
+    }
     set(state => {
-      const newHistory = [...state.history, snapshot].slice(-500)
-      console.log(`  📜 History now has ${newHistory.length} snapshots`)
+      // ✅ Deduplicate by timestamp to prevent duplicates
+      const existingIndex = state.history.findIndex(h => 
+        h.timestamp === snapshot.timestamp || 
+        (h.time === snapshot.time && Math.abs((h.timestamp || 0) - (snapshot.timestamp || 0)) < 60000)
+      )
+      
+      let newHistory
+      if (existingIndex >= 0) {
+        // Replace existing snapshot with same timestamp
+        newHistory = [...state.history]
+        newHistory[existingIndex] = snapshot
+      } else {
+        // Add new snapshot
+        newHistory = [...state.history, snapshot]
+      }
+      
+      // Sort by timestamp and limit to last 1000 snapshots
+      newHistory = newHistory
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+        .slice(-1000)
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`  📜 History now has ${newHistory.length} snapshots`)
+      }
       return { history: newHistory }
     })
   }
