@@ -20,35 +20,21 @@ export function initSocket(){
       const updateCauldronLevels = store.updateCauldronLevels
       
       if (updateCauldronLevels) {
-        // Recalculate percentages using store's cauldron capacities for accuracy
-        // This ensures we use the correct capacity even if WebSocket calculation was off
-        const cauldronMap = new Map(store.cauldrons.map(c => [c.id, c]))
-        
+        // Batch update all levels at once
+        // Backend sends level in LITERS and max_volume/capacity
+        // Convert to percentage for display
         const updates = msg.data.map(u => {
-          const cauldron = cauldronMap.get(u.id)
-          // If we have the cauldron in store, recalculate using store's capacity
-          if (cauldron && cauldron.capacity && u.rawLevel != null) {
-            const rawPercentage = (u.rawLevel / cauldron.capacity) * 100
-            // Round to nearest integer, but ensure 100% is possible
-            let percentage = Math.round(rawPercentage)
-            // If very close to 100% (>= 99.5%), ensure it shows as 100%
-            if (rawPercentage >= 99.5) {
-              percentage = 100
-            }
-            // Clamp to 0-100 range
-            percentage = Math.min(100, Math.max(0, percentage))
-            
-            if (process.env.NODE_ENV === 'development' && (percentage >= 95 || rawPercentage >= 99)) {
-              console.log(`📊 initSocket: Recalculated ${u.id} (${cauldron.name || u.id}): ${u.rawLevel}L / ${cauldron.capacity}L = ${rawPercentage.toFixed(2)}% → ${percentage}% (was ${u.level}%)`)
-            }
-            
-            return { id: u.id, level: percentage }
+          const levelLiters = u.level || 0
+          const capacity = u.max_volume || u.capacity || 1000
+          const percentage = Math.round((levelLiters / capacity) * 100)
+          
+          if (process.env.NODE_ENV === 'development' && percentage > 90) {
+            console.log(`📊 High level WS update: ${u.id} = ${levelLiters}L / ${capacity}L = ${percentage}%`)
           }
-          // Fallback to WebSocket-calculated percentage
-          return { id: u.id, level: u.level }
+          
+          return { id: u.id, level: percentage }
         })
-        
-        console.log('📨 initSocket: Updating store with', updates)
+        console.log('📨 initSocket: Updating store with', updates.length, 'cauldron updates')
         updateCauldronLevels(updates)
         
         // Verify the update worked
