@@ -266,19 +266,20 @@ export default function TimelineHeatmap({ onCellClick } = {}){
                   {cauldrons.map((c, rowIndex) => {
                     const m = getMetrics(day, c.id)
                     
-                    // DEBUG: Log metrics for first cauldron in first column
-                    if (rowIndex === 0 && colIndex === 0) {
-                      console.log(`🔍 TimelineHeatmap Cell DEBUG (${c.id}, ${day.time}):`, {
-                        cauldronFromStore: { id: c.id, name: c.name, level: c.level },
-                        metricsFromHistory: m,
-                        dayCauldrons: day.cauldrons,
-                        calculatedFill: m?.fillPercent ?? (m?.level ?? 0),
-                        fallbackToStoreLevel: !m ? c.level : null
+                    // DEBUG: Log metrics for first few cells to diagnose
+                    if (rowIndex === 0 && colIndex < 3) {
+                      console.log(`🔍 Timeline Cell [${colIndex}] (${c.id}, ${day.time}):`, {
+                        hasMetrics: !!m,
+                        metricsLevel: m?.level,
+                        storeLevel: c.level,
+                        dayCauldronsCount: day.cauldrons?.length,
+                        dayCauldrons: day.cauldrons?.slice(0, 2)
                       })
                     }
                     
-                    // If no metrics in history, use current cauldron level from store
-                    const fill = m?.fillPercent ?? m?.level ?? c.level ?? 0
+                    // Use historical snapshot level if available, otherwise fallback to store level
+                    // m?.level is the percentage from the historical snapshot
+                    const fill = m?.level ?? c.level ?? 0
                     const status = m?.status || (fill > 95 ? 'overfill' : fill < 20 ? 'underfill' : 'normal')
                     const colorClass = statusColorMap[status] || statusColorMap.normal
                     const drain = m?.drainVolume ?? 0

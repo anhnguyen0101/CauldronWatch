@@ -259,14 +259,34 @@ async def get_historical_data(
         data = client.get_data(start, end, cauldron_id, use_cache=use_cache)
         
         # Apply limit if specified
+        # Group by timestamp first to preserve complete snapshots
         if limit and limit > 0:
-            # If we have more data than limit, sample evenly
-            if len(data) > limit:
-                step = len(data) // limit
-                data = data[::step][:limit]
-                print(f"📊 Limited results to {len(data)} records (sampled from {len(data) * step})")
+            # Group data by timestamp to preserve complete cauldron snapshots
+            from collections import defaultdict
+            by_timestamp = defaultdict(list)
+            for point in data:
+                by_timestamp[point.timestamp].append(point)
+            
+            timestamps = sorted(by_timestamp.keys())
+            
+            # Calculate max timestamps based on limit (assuming ~12 cauldrons per timestamp)
+            # Limit represents total records, so divide by average cauldrons per timestamp
+            avg_cauldrons_per_timestamp = len(data) / len(timestamps) if timestamps else 12
+            max_timestamps = max(1, int(limit / avg_cauldrons_per_timestamp))
+            
+            # Sample timestamps (not individual records) to preserve data integrity
+            if len(timestamps) > max_timestamps:
+                step = len(timestamps) // max_timestamps
+                sampled_timestamps = timestamps[::step][:max_timestamps]
             else:
-                data = data[:limit]
+                sampled_timestamps = timestamps
+            
+            # Reconstruct data with only sampled timestamps
+            data = []
+            for ts in sampled_timestamps:
+                data.extend(by_timestamp[ts])
+            
+            print(f"📊 Limited to {len(sampled_timestamps)} timestamps ({len(data)} total records, from {len(timestamps)} original timestamps)")
         
         return data
     except Exception as e:
