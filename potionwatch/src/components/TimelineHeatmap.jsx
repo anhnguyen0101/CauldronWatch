@@ -314,96 +314,6 @@ export default function TimelineHeatmap({ onCellClick } = {}){
         </div>
       </div>
 
-      <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-neutral-900 border border-neutral-700" style={{ height: 'auto' }}>
-        <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
-          <div className="inline-flex space-x-2 p-2" style={{ minWidth: 'min-content' }}>
-            {columns.map((day, colIndex) => (
-              <div key={day.time + colIndex} className={`pw-col flex-shrink-0 px-1`} style={{ minWidth: 96 }}>
-                <div className="sticky top-0 bg-transparent z-10 text-xs text-center text-neutral-300 mb-2">{day.time}</div>
-
-                <div className="grid gap-2" style={{ gridTemplateRows: `repeat(${cauldrons.length}, minmax(0, 1fr))` }}>
-                  {cauldrons.map((c, rowIndex) => {
-                    const m = getMetrics(day, c.id)
-                    
-                    // DEBUG: Log metrics for first few cells to diagnose
-                    if (rowIndex === 0 && colIndex < 3) {
-                      console.log(`🔍 Timeline Cell [${colIndex}] (${c.id}, ${day.time}):`, {
-                        hasMetrics: !!m,
-                        metricsLevel: m?.level,
-                        storeLevel: c.level,
-                        dayCauldronsCount: day.cauldrons?.length,
-                        dayCauldrons: day.cauldrons?.slice(0, 2)
-                      })
-                    }
-                    
-                    // Use historical snapshot level if available, otherwise fallback to store level
-                    // m?.level is the percentage from the historical snapshot
-                    const fill = m?.level ?? c.level ?? 0
-                    const status = m?.status || (fill > 95 ? 'overfill' : fill < 20 ? 'underfill' : 'normal')
-                    const colorClass = statusColorMap[status] || statusColorMap.normal
-                    const drain = m?.drainVolume ?? 0
-                    const discrepancy = m?.discrepancy ?? 0
-                    const alertCount = m?.alertCount ?? 0
-                    const isLatestCol = colIndex === (columns.length - 1)
-
-                      return (
-                        <td key={c.id} className={`${rowIndex % 2 === 0 ? 'bg-panel-light/0 dark:bg-panel-dark/0' : 'bg-panel-light/5 dark:bg-panel-dark/5'} rounded-md p-1`}>
-                          <div
-                            onMouseEnter={(e) => {
-                              const r = e.currentTarget.getBoundingClientRect()
-                              setHoveredCauldron(c.id)
-                              setHoveredCell({
-                                colIndex,
-                                cauldronId: c.id,
-                                rect: r,
-                                metrics: m,
-                                column
-                              })
-                            }}
-                            onMouseLeave={() => {
-                              setHoveredCauldron(null)
-                              setHoveredCell(null)
-                            }}
-                            onClick={() => handleCellClick(colIndex, c.id)}
-                            role="button"
-                            className={`flex flex-col items-center justify-center text-text-light dark:text-text-dark text-xs w-16 h-16 rounded-md border ${colorClass} ${
-                              isLiveCol ? 'ring-2 ring-accent/80 shadow-lg' : ''
-                            } ${
-                              hoveredCauldron === c.id ? 'scale-105 ring-2 ring-accent/50' : ''
-                            } cursor-pointer relative transition-all`}
-                            style={{ boxShadow: `0 0 10px 3px ${glowColor}`, WebkitBoxShadow: `0 0 10px 3px ${glowColor}` }}
-                            title={`${c.name}\n${fill}% — ${drain}L${isLiveCol ? ' (LIVE)' : ''}`}
-                          >
-                            <div className="text-[10px] font-medium">{c.name}</div>
-                            <div className="text-sm font-semibold mt-1">{Math.round(fill)}%</div>
-                            {drain ? (
-                              <div className="text-[10px] text-text-light/70 dark:text-text-dark/70 mt-1">{drain}L</div>
-                            ) : null}
-                            
-                            {alertCount > 0 && (
-                              <motion.div
-                                initial={{ scale: 0.8, opacity: 0 }}
-                                animate={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { scale: [1.3, 1, 1.15, 1], x: [0, -3, 3, 0], opacity: 1 } : { scale: [1.05, 1, 1.05], opacity: 1 } }
-                                transition={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { duration: 0.9 } : { repeat: Infinity, duration: 1.2 } }
-                                className={`absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs text-white font-bold flex items-center justify-center shadow-lg ring-2 ${alertCount >= 3 ? 'bg-orange-500 ring-orange-300' : 'bg-rose-500 ring-red-300'}`}
-                                title={`${alertCount} unresolved alerts`}
-                              >
-                                {alertCount}
-                              </motion.div>
-                            )}
-                            {discrepancy > 0 && (<div className="absolute inset-0 rounded-md ring-2 ring-red-500/60 pointer-events-none" />)}
-                          </div>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
       <div className="text-xs text-text-light/70 dark:text-gray-400 mb-2">Heatmap (latest on right). Click a cell to apply snapshot.</div>
 
       <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-panel-light dark:bg-neutral-900 border border-border-light dark:border-neutral-700" style={{ height: 'auto' }}>
@@ -445,7 +355,7 @@ export default function TimelineHeatmap({ onCellClick } = {}){
                       const isLatestCol = colIndex === (columns.length - 1)
 
                       return (
-                        <td key={c.id} className={`${rowIndex % 2 === 0 ? 'bg-panel-light/0 dark:bg-panel-dark/0' : 'bg-panel-light/5 dark:bg-panel-dark/5'} rounded-md p-1`}>
+                        <div key={c.id} className={`${rowIndex % 2 === 0 ? 'bg-panel-light/0 dark:bg-panel-dark/0' : 'bg-panel-light/5 dark:bg-panel-dark/5'} rounded-md p-1`}>
                           <div
                             onMouseEnter={(e) => {
                               const r = e.currentTarget.getBoundingClientRect()
@@ -491,15 +401,15 @@ export default function TimelineHeatmap({ onCellClick } = {}){
                             )}
                             {discrepancy > 0 && (<div className="absolute inset-0 rounded-md ring-2 ring-red-500/60 pointer-events-none" />)}
                           </div>
-                        </td>
+                        </div>
                       )
                     })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        )}
+        </div>
       </div>
 
       {hoveredCell && hoveredCell.metrics && hoveredCell.rect && createPortal((() => {
