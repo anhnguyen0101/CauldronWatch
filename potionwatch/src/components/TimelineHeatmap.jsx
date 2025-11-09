@@ -6,8 +6,9 @@ import { RefreshCw } from 'lucide-react'
 import { fetchHistoryOptimized, invalidateHistoryCache, prefetchNextRange } from '../services/optimizedApi'
 
 const statusColorMap = {
-  normal: 'border-cyan-400 bg-cyan-400/10 dark:bg-cyan-700/80',
-  filling: 'border-sky-400 bg-sky-400/10 dark:bg-sky-700/80',
+  // Blue → Green: use emerald/green tones for normal/filling states so they read green in light mode
+  normal: 'border-emerald-500 bg-emerald-500/10 dark:bg-emerald-700/80',
+  filling: 'border-emerald-400 bg-emerald-400/10 dark:bg-emerald-600/80',
   draining: 'border-orange-400 bg-orange-400/10 dark:bg-orange-700/80',
   overfill: 'border-red-400 bg-red-400/10 dark:bg-red-700/80',
   underfill: 'border-gray-400 bg-gray-400/10 dark:bg-gray-700/80'
