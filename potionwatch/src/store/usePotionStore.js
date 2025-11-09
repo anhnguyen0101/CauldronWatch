@@ -1,10 +1,7 @@
 import create from 'zustand'
 
-const initialCauldrons = [
-  { id: 'a1', name: 'A1', lat: 40.73061, lng: -73.935242, level: 60 },
-  { id: 'b4', name: 'B4', lat: 40.73561, lng: -73.945242, level: 30 },
-  { id: 'c2', name: 'C2', lat: 40.72561, lng: -73.925242, level: 85 }
-]
+// Start with empty array - will be populated from backend
+const initialCauldrons = []
 
 const usePotionStore = create((set, get) => ({
   cauldrons: initialCauldrons,
@@ -12,10 +9,32 @@ const usePotionStore = create((set, get) => ({
   history: [],
   // playback / selection state
   selectedHistoryIndex: null,
+  // Update timestamp - changes on every WebSocket update to trigger re-renders
+  lastUpdate: Date.now(),
 
-  setCauldronLevel: (id, level) => set(state => ({
-    cauldrons: state.cauldrons.map(c => c.id === id ? {...c, level} : c)
-  })),
+  setCauldronLevel: (id, level) => {
+    set(state => {
+      const updated = state.cauldrons.map(c => c.id === id ? {...c, level} : c)
+      return { 
+        cauldrons: updated,
+        lastUpdate: Date.now() // Update timestamp to trigger reactivity
+      }
+    })
+  },
+  
+  // Batch update multiple cauldrons at once (for WebSocket updates)
+  updateCauldronLevels: (updates) => {
+    set(state => {
+      const updated = state.cauldrons.map(c => {
+        const update = updates.find(u => u.id === c.id)
+        return update ? {...c, level: update.level} : c
+      })
+      return { 
+        cauldrons: updated,
+        lastUpdate: Date.now() // Single timestamp update for batch
+      }
+    })
+  },
 
   setSelectedHistoryIndex: (index) => set(state => ({ selectedHistoryIndex: index })),
 

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import usePotionStore from '../store/usePotionStore'
 import { motion } from 'framer-motion'
-import { startMockSocket } from '../services/websocket'
+import { startSocket } from '../services/websocket'
 
 const statusColorMap = {
   normal: 'border-cyan-400 bg-cyan-700',
@@ -109,25 +109,81 @@ export default function TimelineHeatmap({ onCellClick } = {}){
     return ()=>{ if(timerRef.current){ clearInterval(timerRef.current); timerRef.current = null } }
   }, [playing, history])
 
+  // Track drain events and alerts per cauldron for status calculation
+  const drainEventsRef = useRef(new Map()) // cauldron_id -> latest drain event
+  const alertsRef = useRef(new Map()) // cauldron_id -> alert count
+  const discrepanciesRef = useRef(new Map()) // cauldron_id -> has discrepancy
+
   // live socket subscription: collect incoming updates into minute-keyed columns
   useEffect(()=>{
+    if(!isLive) return
+
     const minuteKey = (ts) => { const d = new Date(ts); return d.toISOString().slice(0,16) }
     const MAX_POINTS = 20
 
-    const processEntry = (entry) => {
+    // Helper to calculate status based on level and events
+    const calculateStatus = (level, cauldronId) => {
+      if (level > 95) return 'overfill'
+      if (level < 10) return 'underfill'
+      // Check if there's a recent drain event (within last 10 minutes for better visibility)
+      const drainEvent = drainEventsRef.current.get(cauldronId)
+      if (drainEvent) {
+        const timeSinceDrain = Date.now() - drainEvent.timestamp
+        if (timeSinceDrain < 10 * 60 * 1000) { // 10 minutes
+          console.log(`💧 TimelineHeatmap: ${cauldronId} is draining (${Math.round(timeSinceDrain/1000)}s ago)`)
+          return 'draining'
+        }
+      }
+      // Check if level is increasing (filling)
+      // For now, default to normal unless we have more data
+      return 'normal'
+    }
+
+    const processCauldronUpdate = (cauldronData, timestamp) => {
       // Check live status using ref to avoid dependency issues
       if(!isLiveRef.current) return
-      const key = minuteKey(entry.timestamp ?? Date.now())
+      
+      const key = minuteKey(timestamp)
       const map = columnsMapRef.current
       let col = map.get(key)
       if(!col){
-        col = { time: new Date(entry.timestamp ?? Date.now()).toLocaleTimeString(), cauldrons: [] }
+        col = { time: new Date(timestamp).toLocaleTimeString(), cauldrons: [] }
         map.set(key, col)
       }
-      const existing = col.cauldrons.find(c => c.id === entry.cauldron)
-      const newMetrics = { id: entry.cauldron, name: entry.cauldron.toUpperCase(), status: entry.status, fillPercent: entry.fillPercent, drainVolume: entry.drainVolume, alertCount: entry.alertCount, discrepancy: entry.discrepancy }
-      if(existing) Object.assign(existing, newMetrics)
-      else col.cauldrons.push(newMetrics)
+
+      // Process each cauldron in the update
+      cauldronData.forEach(c => {
+        const cauldronId = c.cauldron_id || c.id
+        const level = c.level || 0
+        const fillPercent = Math.round(level)
+        // Recalculate status each time to ensure drain events are reflected
+        const status = calculateStatus(fillPercent, cauldronId)
+        const drainEvent = drainEventsRef.current.get(cauldronId)
+        const drainVolume = drainEvent ? drainEvent.volume_drained || 0 : 0
+        const alertCount = alertsRef.current.get(cauldronId) || 0
+        const hasDiscrepancy = discrepanciesRef.current.get(cauldronId) || false
+
+        const existing = col.cauldrons.find(c => c.id === cauldronId)
+        const newMetrics = { 
+          id: cauldronId, 
+          name: cauldronId.replace('cauldron_', '').toUpperCase(), 
+          status, 
+          fillPercent, 
+          drainVolume, 
+          alertCount, 
+          discrepancy: hasDiscrepancy ? 1 : 0 
+        }
+        if(existing) {
+          // Force update to ensure status changes are reflected
+          Object.assign(existing, newMetrics)
+          // Log status changes for debugging
+          if (existing.status !== status) {
+            console.log(`💧 TimelineHeatmap: Status changed for ${cauldronId}: ${existing.status} -> ${status}`)
+          }
+        } else {
+          col.cauldrons.push(newMetrics)
+        }
+      })
 
       // enforce max points
       while(map.size > MAX_POINTS){
@@ -138,27 +194,130 @@ export default function TimelineHeatmap({ onCellClick } = {}){
       const arr = Array.from(map.values())
       setColumns(arr)
 
-      // mark updated cell briefly
+      // mark updated cells briefly
       const colIndex = arr.length - 1
-      setUpdatedCell({ colIndex, cauldronId: entry.cauldron })
-      setTimeout(()=> setUpdatedCell(null), 900)
+      cauldronData.forEach(c => {
+        const cauldronId = c.cauldron_id || c.id
+        setUpdatedCell({ colIndex, cauldronId })
+        setTimeout(()=> setUpdatedCell(null), 900)
+      })
       
       // auto-scroll to rightmost after state update and DOM render
       // Force scroll to show new data
       scrollToRightmost(true)
     }
 
-    const wrapped = (msg) => {
-      // support mock that emits a batch of levels
-      if(msg && Array.isArray(msg.data)){
-        msg.data.forEach(u => processEntry({ timestamp: Date.now(), cauldron: u.id, fillPercent: u.level, status: 'normal', drainVolume: 0, alertCount: 0 }))
-      } else {
-        processEntry(msg)
+    const handleMessage = (msg) => {
+      if (msg.type === 'levels' && Array.isArray(msg.data)) {
+        // Process cauldron level updates (from initSocket transformation)
+        // msg.data is already an array of {id, level} objects with percentages
+        const timestamp = Date.now()
+        const cauldronData = msg.data.map(u => ({
+          cauldron_id: u.id,
+          id: u.id,
+          level: u.level // Already a percentage
+        }))
+        processCauldronUpdate(cauldronData, timestamp)
+      } else if (msg.type === 'cauldron_update' && msg.data && Array.isArray(msg.data.cauldrons)) {
+        // Process backend cauldron_update format directly from WebSocket
+        const timestamp = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+        // Backend sends raw levels, need to convert to percentage
+        const cauldronData = msg.data.cauldrons.map(c => {
+          const cauldronId = c.cauldron_id || c.id
+          const rawLevel = c.level || 0
+          const maxVolume = c.max_volume || c.capacity || 1000
+          const levelPercent = Math.round((rawLevel / maxVolume) * 100)
+          return {
+            cauldron_id: cauldronId,
+            id: cauldronId,
+            level: levelPercent
+          }
+        })
+        processCauldronUpdate(cauldronData, timestamp)
+      } else if (msg.type === 'drain_event' && msg.data) {
+        // Track drain event for status calculation
+        console.log('💧 TimelineHeatmap: Received drain event', msg.data)
+        const cauldronId = msg.data.cauldron_id
+        if (cauldronId) {
+          const drainTimestamp = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+          drainEventsRef.current.set(cauldronId, {
+            timestamp: drainTimestamp,
+            volume_drained: msg.data.volume_drained || 0
+          })
+          console.log(`💧 TimelineHeatmap: Tracked drain for ${cauldronId}, volume: ${msg.data.volume_drained}L`)
+          
+          // Force re-render of all columns to update status colors
+          // Get current columns and update the affected cauldron's status
+          const currentColumns = Array.from(columnsMapRef.current.values())
+          const updatedColumns = currentColumns.map(col => {
+            const updatedCauldrons = col.cauldrons.map(c => {
+              if (c.id === cauldronId) {
+                // Recalculate status with new drain event
+                const level = c.fillPercent || 0
+                const status = calculateStatus(level, cauldronId)
+                const drainEvent = drainEventsRef.current.get(cauldronId)
+                return {
+                  ...c,
+                  status,
+                  drainVolume: drainEvent ? drainEvent.volume_drained || 0 : 0
+                }
+              }
+              return c
+            })
+            return { ...col, cauldrons: updatedCauldrons }
+          })
+          
+          // Update the map and state
+          // Keep existing keys, just update the columns
+          updatedColumns.forEach(col => {
+            // Find the existing key for this column by matching time
+            for (const [key, existingCol] of columnsMapRef.current.entries()) {
+              if (existingCol.time === col.time) {
+                columnsMapRef.current.set(key, col)
+                break
+              }
+            }
+          })
+          setColumns(updatedColumns)
+          
+          // Also process a new update to add a new column with drain status
+          const cauldrons = usePotionStore.getState().cauldrons
+          const cauldron = cauldrons.find(c => c.id === cauldronId)
+          if (cauldron) {
+            processCauldronUpdate([{ 
+              cauldron_id: cauldronId, 
+              id: cauldronId, 
+              level: cauldron.level || 0 
+            }], drainTimestamp)
+            console.log(`💧 TimelineHeatmap: Updated timeline for ${cauldronId} with drain status (orange)`)
+          } else {
+            console.warn(`💧 TimelineHeatmap: Cauldron ${cauldronId} not found in store`)
+          }
+        }
+      } else if (msg.type === 'discrepancy' && msg.data) {
+        // Track discrepancy
+        const cauldronId = msg.data.cauldron_id
+        if (cauldronId) {
+          discrepanciesRef.current.set(cauldronId, true)
+          // Update alert count
+          const current = alertsRef.current.get(cauldronId) || 0
+          alertsRef.current.set(cauldronId, current + 1)
+          // Process update to show discrepancy
+          const timestamp = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+          const cauldrons = usePotionStore.getState().cauldrons
+          const cauldron = cauldrons.find(c => c.id === cauldronId)
+          if (cauldron) {
+            processCauldronUpdate([{ cauldron_id: cauldronId, id: cauldronId, level: cauldron.level || 0 }], timestamp)
+          }
+        }
       }
     }
-    const stop = startMockSocket(wrapped)
-    return ()=>{ if(stop && typeof stop.close === 'function') stop.close() }
-  }, []) // Empty deps - socket created once, isLive checked via ref
+
+    const stop = startSocket(handleMessage)
+    return ()=>{ 
+      if(stop && typeof stop.close === 'function') stop.close() 
+    }
+  }, [isLive])
 
   // Prevent scroll events from bubbling to page level
   const handleScroll = (e) => {
