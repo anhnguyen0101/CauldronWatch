@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import PredictedOverflows from "../components/forecast/PredicredOverflows";
 import OptimizedRoutes from "../components/forecast/OptimizedRoutes";
-import DebugPanel from "../components/forecast/DebugPanel";
 import {
   requireJson,
   buildPredictions,
@@ -96,14 +95,6 @@ export default function Forecast() {
 
   return (
     <div className="space-y-6">
-
-      {/* Debug */}
-      <DebugPanel
-        debugInfo={debugInfo}
-        loading={loading}
-        show={showDebug}
-        onToggle={() => setShowDebug((v) => !v)}
-      />
 
       {/* Sections */}
       <PredictedOverflows
