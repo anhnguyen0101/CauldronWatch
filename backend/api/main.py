@@ -971,57 +971,57 @@ async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time updates"""
     # Accept connection first (required by FastAPI)
     try:
-    await websocket.accept()
+        await websocket.accept()
     except Exception as e:
         print(f"❌ Error accepting WebSocket: {e}")
         return
     
     # Register with manager AFTER accepting
     if websocket not in ws_manager.active_connections:
-    ws_manager.active_connections.append(websocket)
+        ws_manager.active_connections.append(websocket)
     print(f"✅ WebSocket connected. Total connections: {len(ws_manager.active_connections)}")
     
     try:
         # Send initial connection message
         try:
-        await ws_manager.send_personal_message({
-            "type": "connected",
-            "message": "Connected to CauldronWatch real-time updates"
-        }, websocket)
+            await ws_manager.send_personal_message({
+                "type": "connected",
+                "message": "Connected to CauldronWatch real-time updates"
+            }, websocket)
         except Exception as e:
             print(f"⚠️  Error sending initial WebSocket message: {e}")
             # Don't break - connection might still be valid
         
         # Keep connection alive with a simple heartbeat
         # The client doesn't need to send messages, we just broadcast
-            import asyncio
-            try:
+        import asyncio
+        try:
             # Wait for disconnect or client message
             # Use a background task to keep connection alive
             while True:
                 try:
                     # Wait for any message from client (or disconnect)
                     # This keeps the connection alive
-                await asyncio.wait_for(
-                    websocket.receive_text(),
+                    await asyncio.wait_for(
+                        websocket.receive_text(),
                         timeout=30.0  # 30 second timeout
-                )
+                    )
                     # Client sent a message - ignore it (we're just broadcasting)
-            except asyncio.TimeoutError:
-                # Timeout is normal - connection is still alive
+                except asyncio.TimeoutError:
+                    # Timeout is normal - connection is still alive
                     # Check if connection is still valid by trying to send a ping
-                try:
+                    try:
                         if websocket.client_state.value == 1:  # CONNECTED
-                    await ws_manager.send_personal_message({
-                        "type": "ping",
-                        "timestamp": datetime.now().isoformat()
-                    }, websocket)
+                            await ws_manager.send_personal_message({
+                                "type": "ping",
+                                "timestamp": datetime.now().isoformat()
+                            }, websocket)
                         else:
                             # Connection is not in CONNECTED state
                             break
                     except Exception:
                         # Error sending ping - connection is likely closed
-                    break
+                        break
         except WebSocketDisconnect:
             # Normal disconnect
             pass
