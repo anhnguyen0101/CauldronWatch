@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { initSocket } from './initSocket'
-import { fetchHistory, fetchCauldrons, fetchLatestLevels, checkBackendHealth } from '../services/api'
+import { fetchHistory, fetchCauldrons, fetchLatestLevels, checkBackendHealth, fetchNetwork, fetchMarket } from '../services/api'
 import usePotionStore from '../store/usePotionStore'
 
 export default function useInit(){
@@ -55,7 +55,7 @@ export default function useInit(){
       
       // Load latest levels
       return fetchLatestLevels()
-    }).then(levels => {
+  }).then(async levels => {
         if (!levels) {
           console.warn('⚠️  No levels data received from backend (levels is null/undefined)')
           return
@@ -113,7 +113,22 @@ export default function useInit(){
             console.log(`📊 All cauldron levels:`, store.cauldrons.map(c => `${c.id}: ${c.level || 0}%`))
           }
           
-          // Load initial history AFTER cauldrons and levels are loaded
+          // Load network and market data (parallel) so the graph can render live edges
+          // Then load initial history AFTER cauldrons and levels are loaded
+          try {
+            const [networkData, marketData] = await Promise.all([fetchNetwork(), fetchMarket()])
+            if (networkData && Array.isArray(networkData.edges)) {
+              usePotionStore.getState().setLinks(networkData.edges)
+              console.log(`🌐 Loaded ${networkData.edges.length} network edges`)
+            }
+            if (marketData) {
+              usePotionStore.getState().setMarket(marketData)
+              console.log('🏪 Loaded market data:', marketData)
+            }
+          } catch (e) {
+            console.warn('Unable to load network/market at boot:', e)
+          }
+
           // This ensures history snapshots can reference the loaded cauldrons
           return fetchHistory()
         } else {

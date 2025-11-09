@@ -159,3 +159,35 @@ export async function checkBackendHealth() {
     return false
   }
 }
+
+// Fetch full network topology (nodes + edges)
+export async function fetchNetwork() {
+  try {
+    const response = await api.get('/api/network')
+    // Backend returns a NetworkDto with nodes and edges; normalize to frontend-friendly links
+    // Example edge shape from backend: {from: 'cauldron_001', to: 'market_001', cost: '00:45:00', node_id: 'market_001'}
+    const network = response.data || {}
+    const edges = (network.edges || []).map(e => ({
+      from: e.from || e.node_id || null,
+      to: e.to || e.node_id || null,
+      cost: e.cost || null,
+      distance: e.distance || null,
+      weight: e.weight || null
+    }))
+    return { nodes: network.nodes || [], edges }
+  } catch (error) {
+    console.error('Error fetching network:', error)
+    return { nodes: [], edges: [] }
+  }
+}
+
+// Fetch market (single market hub) if available
+export async function fetchMarket() {
+  try {
+    const response = await api.get('/api/market')
+    return response.data || null
+  } catch (error) {
+    console.warn('Market not available or error fetching market:', error?.message || error)
+    return null
+  }
+}

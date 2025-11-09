@@ -2,6 +2,8 @@ import { create } from 'zustand'
 
 const usePotionStore = create((set, get) => ({
   cauldrons: [], // Cauldrons are loaded from backend on app initialization
+  links: [], // Network edges (from -> to) loaded from backend
+  market: null, // Market hub info
   alerts: [],
   history: [],
   // playback / selection state
@@ -20,6 +22,12 @@ const usePotionStore = create((set, get) => ({
       }
     })
   },
+
+  // Network links setter
+  setLinks: (links) => set(state => ({ links })),
+
+  // Market setter
+  setMarket: (market) => set(state => ({ market })),
   
   // Batch update multiple cauldrons at once (for WebSocket updates)
   updateCauldronLevels: (updates) => {
