@@ -6,19 +6,55 @@ const usePotionStore = create((set, get) => ({
   history: [],
   // playback / selection state
   selectedHistoryIndex: null,
+  // Update timestamp - changes on every WebSocket update to trigger re-renders
+  lastUpdate: Date.now(),
+  // Queue for updates that arrive before cauldrons are loaded
+  pendingUpdates: [],
 
   setCauldronLevel: (id, level) => {
-    console.log(`🔧 setCauldronLevel called: id=${id}, level=${level}`)
     set(state => {
+      const updated = state.cauldrons.map(c => c.id === id ? {...c, level} : c)
+      return { 
+        cauldrons: updated,
+        lastUpdate: Date.now() // Update timestamp to trigger reactivity
+      }
+    })
+  },
+  
+  // Batch update multiple cauldrons at once (for WebSocket updates)
+  updateCauldronLevels: (updates) => {
+    console.log('🔄 Store: updateCauldronLevels called with', updates.length, 'updates')
+    set(state => {
+      if (state.cauldrons.length === 0) {
+        console.warn('⚠️ Store: No cauldrons in store to update. Queuing updates for later.', updates)
+        // Queue updates to apply when cauldrons are loaded
+        return { 
+          ...state,
+          pendingUpdates: [...state.pendingUpdates, ...updates]
+        }
+      }
+      
+      // Apply any pending updates first
+      let updatesToApply = [...state.pendingUpdates, ...updates]
+      if (state.pendingUpdates.length > 0) {
+        console.log(`📦 Store: Applying ${state.pendingUpdates.length} pending updates`)
+      }
+      
       const updated = state.cauldrons.map(c => {
-        if (c.id === id) {
-          console.log(`  ✅ Updating cauldron ${id}: ${c.level}% → ${level}%`)
-          return {...c, level}
+        const update = updatesToApply.find(u => u.id === c.id)
+        if (update) {
+          console.log(`   ✅ Updating ${c.id}: ${c.level}% -> ${update.level}%`)
+          return {...c, level: update.level}
         }
         return c
       })
-      console.log(`  📊 Updated cauldrons:`, updated.map(c => `${c.id}: ${c.level}%`))
-      return { cauldrons: updated }
+      const newState = { 
+        cauldrons: updated,
+        lastUpdate: Date.now(), // Single timestamp update for batch
+        pendingUpdates: [] // Clear pending updates after applying
+      }
+      console.log('🔄 Store: State updated. New lastUpdate:', newState.lastUpdate)
+      return newState
     })
   },
 

@@ -20,9 +20,44 @@ export default function useInit(){
     })
 
     // Load initial cauldrons
-    fetchCauldrons()
-      .then(cauldrons => {
-        console.log('📦 Fetched cauldrons from backend:', cauldrons.length)
+    fetchCauldrons().then(cauldrons => {
+      console.log('📦 Fetched cauldrons from backend:', cauldrons.length)
+      // Transform backend format to frontend format
+      // Backend returns: {id, latitude, longitude, max_volume, name}
+      const transformed = cauldrons.map(c => {
+        const cauldronId = c.cauldron_id || c.id
+        return {
+          id: cauldronId,
+          name: c.name || cauldronId,
+          lat: c.latitude,
+          lng: c.longitude,
+          level: 0, // Will be updated by latest levels
+          capacity: c.capacity || c.max_volume || 1000
+        }
+      })
+      
+      console.log('✅ Transformed cauldrons:', transformed.length, transformed[0])
+      
+      // Get current store state to check for pending updates
+      const currentStore = usePotionStore.getState()
+      
+      // Update store with cauldrons
+      usePotionStore.setState({ cauldrons: transformed })
+      
+      // Apply any pending WebSocket updates that arrived before cauldrons were loaded
+      if (currentStore.pendingUpdates && currentStore.pendingUpdates.length > 0) {
+        console.log(`📦 Applying ${currentStore.pendingUpdates.length} pending WebSocket updates`)
+        const updateCauldronLevels = usePotionStore.getState().updateCauldronLevels
+        if (updateCauldronLevels) {
+          updateCauldronLevels(currentStore.pendingUpdates)
+        }
+      }
+      
+      // Load latest levels
+      return fetchLatestLevels()
+    }).then(levels => {
+      console.log('📊 Fetched latest levels from backend:', levels?.length || 0)
+      if (levels && levels.length > 0) {
         const store = usePotionStore.getState()
         // Transform backend format to frontend format
         // Backend returns: {id, latitude, longitude, max_volume, name}
@@ -119,80 +154,23 @@ export default function useInit(){
           return
         }
         
-        console.log('📜 Fetched history from backend:', h.length, 'snapshots')
-        const store = usePotionStore.getState()
-        const push = store.pushHistorySnapshot
-        
-        // Convert history snapshots: transform levelLiters to percentages using cauldron capacities
-        h.forEach(s => {
-          if (s.cauldrons && s.cauldrons.length > 0) {
-            // Convert levelLiters to percentage using store cauldron capacities
-            const enhancedCauldrons = s.cauldrons.map(cData => {
-              const storeCauldron = store.cauldrons.find(c => c.id === cData.id)
-              
-              if (storeCauldron && storeCauldron.capacity > 0) {
-                // Convert liters to percentage
-                const levelLiters = cData.levelLiters || 0
-                const percentage = Math.round((levelLiters / storeCauldron.capacity) * 100)
-                
-                console.log(`  📜 Converting ${cData.id}: ${levelLiters}L / ${storeCauldron.capacity}L = ${percentage}%`)
-                
-                return {
-                  id: cData.id,
-                  name: storeCauldron.name || cData.id,
-                  level: percentage,
-                  fillPercent: percentage,
-                  status: percentage > 95 ? 'overfill' : percentage < 20 ? 'underfill' : 'normal'
-                }
-              } else {
-                // Use store level if cauldron found but no capacity/conversion possible
-                console.warn(`  ⚠️  No store cauldron or capacity for ${cData.id}, using store level or 0`)
-                return {
-                  id: cData.id,
-                  name: storeCauldron?.name || cData.id,
-                  level: storeCauldron?.level || 0,
-                  fillPercent: storeCauldron?.level || 0,
-                  status: (storeCauldron?.level || 0) > 95 ? 'overfill' : (storeCauldron?.level || 0) < 20 ? 'underfill' : 'normal'
-                }
-              }
-            })
-            
-            // Calculate avgLevel from percentages
-            const avgLevel = enhancedCauldrons.length > 0
-              ? Math.round(enhancedCauldrons.reduce((sum, c) => sum + (c.level || 0), 0) / enhancedCauldrons.length)
-              : 0
-            
-            push({
-              time: s.time,
-              avgLevel: avgLevel,
-              cauldrons: enhancedCauldrons
-            })
-          } else {
-            // If no cauldrons in snapshot, create from store state
-            console.log(`  📜 Snapshot ${s.time} has no cauldrons, creating from store`)
-            const cauldronSnapshots = store.cauldrons.map(c => ({
-              id: c.id,
-              name: c.name,
-              level: c.level || 0,
-              fillPercent: c.level || 0,
-              status: (c.level || 0) > 95 ? 'overfill' : (c.level || 0) < 20 ? 'underfill' : 'normal'
-            }))
-            push({
-              time: s.time,
-              avgLevel: cauldronSnapshots.length > 0
-                ? Math.round(cauldronSnapshots.reduce((sum, c) => sum + (c.level || 0), 0) / cauldronSnapshots.length)
-                : 0,
-              cauldrons: cauldronSnapshots
-            })
-          }
-        })
-        console.log('✅ Loaded', h.length, 'history snapshots with cauldron data')
-      })
-      .catch(err => {
-        console.error('❌ Error loading initial data from backend:', err)
-        console.error('❌ Backend is not available. Please start the backend server.')
-      })
+        // Log average level for verification
+        const avgLevel = Math.round(
+          store.cauldrons.reduce((sum, c) => sum + c.level, 0) / store.cauldrons.length
+        )
+        console.log(`📊 Average level: ${avgLevel}%`)
+      } else {
+        console.warn('⚠️  No levels data received from backend')
+      }
+      
+      // History loading is now handled by TimelineHeatmap component
+      // It will fetch 7 days of data once and filter client-side
+      console.log('✅ Initial data loaded. Timeline will load history separately.')
+    }).catch(err => {
+      console.error('❌ Error loading initial data:', err)
+    })
 
+    // Initialize WebSocket connection
     const sock = initSocket()
     return ()=> sock.close()
   }, [])

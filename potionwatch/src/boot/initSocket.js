@@ -8,44 +8,54 @@ export function initSocket(){
 
   const sock = startSocket((msg)=>{
     if(msg.type === 'levels'){
-      // Update cauldron levels from WebSocket
-      if(msg.data && Array.isArray(msg.data)){
-        console.log(`📨 Processing ${msg.data.length} level updates from WebSocket`)
+      console.log(`📨 initSocket: Received ${msg.data?.length || 0} cauldron updates`, msg.data)
+      
+      if (!msg.data || !Array.isArray(msg.data) || msg.data.length === 0) {
+        console.warn('⚠️ initSocket: No valid data in levels message', msg)
+        return
+      }
+      
+      // Use batch update for better performance and reactivity
+      const store = usePotionStore.getState()
+      const updateCauldronLevels = store.updateCauldronLevels
+      
+      if (updateCauldronLevels) {
+        // Batch update all levels at once
+        const updates = msg.data.map(u => ({ id: u.id, level: u.level }))
+        console.log('📨 initSocket: Updating store with', updates)
+        updateCauldronLevels(updates)
         
-        const avg = Math.round(msg.data.reduce((a,d)=>a+(d.level || 0),0)/msg.data.length)
-        let updated = 0
-        
-        msg.data.forEach(u=> {
-          if(u.id && u.level != null){
-            console.log(`   ✅ WebSocket: Updating ${u.id} to ${u.level}% (raw: ${u.rawLevel}L)`)
-            setCauldronLevel(u.id, u.level)
-            updated++
-          } else {
-            console.warn(`   ⚠️  WebSocket: Invalid update data:`, u)
-          }
-        })
-        
-        console.log(`✅ WebSocket: Updated ${updated}/${msg.data.length} cauldron levels (avg: ${avg}%)`)
-        
-        // Push history snapshot with per-cauldron data (limited to avoid memory issues)
-        const currentHistory = usePotionStore.getState().history || []
-        if(currentHistory.length < 500){
-          // Include per-cauldron data in history snapshot for TimelineHeatmap
-          const store = usePotionStore.getState()
-          const cauldronSnapshots = store.cauldrons.map(c => ({
-            id: c.id,
-            name: c.name,
-            level: c.level,
-            fillPercent: c.level, // Use level as fillPercent for compatibility
-            status: c.level > 95 ? 'overfill' : c.level < 20 ? 'underfill' : 'normal'
-          }))
-          
-          console.log(`📜 Creating history snapshot with ${cauldronSnapshots.length} cauldrons:`, cauldronSnapshots.map(c => `${c.id}: ${c.level}%`))
-          
-          pushHistorySnapshot({ 
-            time: new Date().toLocaleTimeString(), 
-            avgLevel: avg,
-            cauldrons: cauldronSnapshots
+        // Verify the update worked
+        const updatedStore = usePotionStore.getState()
+        console.log(`✅ Batch updated ${msg.data.length} cauldron levels. Store now has ${updatedStore.cauldrons.length} cauldrons`)
+        console.log('📊 Sample cauldron levels:', updatedStore.cauldrons.slice(0, 3).map(c => `${c.id}: ${c.level}%`))
+      } else {
+        console.warn('⚠️ initSocket: updateCauldronLevels not available, using fallback')
+        // Fallback to individual updates
+        msg.data.forEach(u => setCauldronLevel(u.id, u.level))
+      }
+      
+      // Calculate and log average
+      const avg = Math.round(msg.data.reduce((a,d)=>a+d.level,0)/msg.data.length)
+      console.log(`📊 WebSocket: New average level = ${avg}%`)
+      
+      // Push history snapshot
+      const currentHistory = usePotionStore.getState().history || []
+      pushHistorySnapshot({ 
+        time: new Date().toLocaleTimeString(), 
+        avgLevel: avg,
+        timestamp: new Date().toISOString()
+      })
+
+      // Alert rule: warn if level > 95%
+      msg.data.forEach(u=>{
+        if(u.level > 95){
+          addAlert({ 
+            id: Date.now()+u.id, 
+            title: `⚠️ Overfill Alert: ${u.id}`, 
+            message: `${u.id} is above 95% (${u.level}%)`,
+            severity: 'critical',
+            timestamp: new Date().toISOString()
           })
         }
 

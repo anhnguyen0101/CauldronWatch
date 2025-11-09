@@ -1,46 +1,91 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { fetchDiscrepancies, detectDiscrepancies } from '../services/api'
-import { AlertTriangle, AlertCircle, Info } from 'lucide-react'
+import { AlertTriangle, AlertCircle, Info, RefreshCw } from 'lucide-react'
 
 export default function Discrepancies(){
-  const [discrepancies, setDiscrepancies] = useState([])
-  const [summary, setSummary] = useState({ total: 0, critical: 0, warning: 0, info: 0 })
+  // Store ALL discrepancies (unfiltered) - fetched once
+  const [allDiscrepancies, setAllDiscrepancies] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterSeverity, setFilterSeverity] = useState(null)
   const [filterCauldron, setFilterCauldron] = useState(null)
+  const [lastFetchTime, setLastFetchTime] = useState(null)
 
+  // Fetch all discrepancies once (without filters)
   useEffect(() => {
     async function loadDiscrepancies() {
       try {
         setLoading(true)
-        console.log('🔍 Loading discrepancies from Person 3...')
+        console.log('🔍 Loading all discrepancies from Person 3...')
         
         // First, try to detect discrepancies (this populates the cache)
         const detectResult = await detectDiscrepancies()
         console.log('✅ Detection complete:', detectResult)
         
-        // Then fetch with filters
-        const result = await fetchDiscrepancies(filterSeverity, filterCauldron)
-        console.log('📊 Fetched discrepancies:', result)
+        // Fetch ALL discrepancies (no filters) - this is the only API call
+        const result = await fetchDiscrepancies(null, null)
+        console.log('📊 Fetched all discrepancies:', result.discrepancies?.length || 0, 'items')
         
-        setDiscrepancies(result.discrepancies || [])
-        setSummary({
-          total: result.total_discrepancies || 0,
-          critical: result.critical_count || 0,
-          warning: result.warning_count || 0,
-          info: result.info_count || 0
-        })
+        setAllDiscrepancies(result.discrepancies || [])
+        setLastFetchTime(new Date())
       } catch (error) {
         console.error('❌ Error loading discrepancies:', error)
-        setDiscrepancies([])
-        setSummary({ total: 0, critical: 0, warning: 0, info: 0 })
+        setAllDiscrepancies([])
       } finally {
         setLoading(false)
       }
     }
     
     loadDiscrepancies()
-  }, [filterSeverity, filterCauldron])
+  }, []) // Only fetch once on mount
+
+  // Filter discrepancies client-side (no API call)
+  const filteredDiscrepancies = useMemo(() => {
+    let filtered = [...allDiscrepancies]
+    
+    if (filterSeverity) {
+      filtered = filtered.filter(d => d.severity === filterSeverity)
+    }
+    
+    if (filterCauldron) {
+      const searchTerm = filterCauldron.toLowerCase()
+      filtered = filtered.filter(d => 
+        d.cauldron_id?.toLowerCase().includes(searchTerm)
+      )
+    }
+    
+    return filtered
+  }, [allDiscrepancies, filterSeverity, filterCauldron])
+
+  // Calculate summary from filtered results
+  const summary = useMemo(() => {
+    const total = filteredDiscrepancies.length
+    const critical = filteredDiscrepancies.filter(d => d.severity === 'critical').length
+    const warning = filteredDiscrepancies.filter(d => d.severity === 'warning').length
+    const info = filteredDiscrepancies.filter(d => d.severity === 'info').length
+    
+    return { total, critical, warning, info }
+  }, [filteredDiscrepancies])
+
+  // Manual refresh function
+  const handleRefresh = async () => {
+    try {
+      setLoading(true)
+      console.log('🔄 Refreshing discrepancies...')
+      
+      const detectResult = await detectDiscrepancies()
+      console.log('✅ Detection complete:', detectResult)
+      
+      const result = await fetchDiscrepancies(null, null)
+      console.log('📊 Refreshed discrepancies:', result.discrepancies?.length || 0, 'items')
+      
+      setAllDiscrepancies(result.discrepancies || [])
+      setLastFetchTime(new Date())
+    } catch (error) {
+      console.error('❌ Error refreshing discrepancies:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const getSeverityIcon = (severity) => {
     switch (severity) {
@@ -110,7 +155,7 @@ export default function Discrepancies(){
 
       {/* Filters */}
       <div className="card">
-        <div className="flex items-center gap-4 mb-4">
+        <div className="flex items-center gap-4 mb-4 flex-wrap">
           <h3 className="panel-title">Filters</h3>
           <select
             value={filterSeverity || ''}
@@ -127,17 +172,36 @@ export default function Discrepancies(){
             placeholder="Filter by Cauldron ID..."
             value={filterCauldron || ''}
             onChange={(e) => setFilterCauldron(e.target.value || null)}
-            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm flex-1"
+            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm flex-1 min-w-[200px]"
           />
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-sm hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            title="Refresh discrepancies data"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+          {lastFetchTime && (
+            <span className="text-xs text-gray-400">
+              Last updated: {lastFetchTime.toLocaleTimeString()}
+            </span>
+          )}
         </div>
       </div>
 
       {/* Discrepancies Table */}
       <div className="card">
-        <h3 className="panel-title mb-4">Discrepancies</h3>
-        {discrepancies.length === 0 ? (
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="panel-title">Discrepancies</h3>
+          <span className="text-sm text-gray-400">
+            Showing {filteredDiscrepancies.length} of {allDiscrepancies.length}
+          </span>
+        </div>
+        {filteredDiscrepancies.length === 0 ? (
           <div className="text-center py-8 text-gray-400">
-            {summary.total === 0 
+            {allDiscrepancies.length === 0
               ? "No discrepancies found. All tickets match drain events perfectly!"
               : "No discrepancies match the current filters."}
           </div>
@@ -157,7 +221,7 @@ export default function Discrepancies(){
                 </tr>
               </thead>
               <tbody>
-                {discrepancies.map((d, idx) => (
+                {filteredDiscrepancies.map((d, idx) => (
                   <tr key={`${d.ticket_id}_${idx}`} className="border-t border-neutral-800 hover:bg-neutral-800/50 transition-colors">
                     <td className="px-3 py-3">
                       <div className={`flex items-center gap-2 px-2 py-1 rounded ${getSeverityColor(d.severity)}`}>
