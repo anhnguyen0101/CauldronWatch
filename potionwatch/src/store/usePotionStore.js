@@ -205,7 +205,7 @@ const usePotionStore = create((set, get) => ({
     }))
   },
 
-  getCachedForecast: (maxAgeMs = 3 * 60 * 1000) => { // 3 min default
+  getCachedForecast: (maxAgeMs = 60 * 60 * 1000) => { // 1 hour default (increased from 3 min)
     const state = get()
     if (state.cachedForecast && (Date.now() - state.cachedForecast.timestamp) < maxAgeMs) {
       return {

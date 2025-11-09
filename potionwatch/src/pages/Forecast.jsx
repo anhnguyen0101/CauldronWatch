@@ -39,14 +39,15 @@ export default function Forecast() {
 
   // Function to update forecast data
   const updateForecastData = React.useCallback(async (forceRefresh = false) => {
-    // Check store cache first (persists across navigation)
+    // Check store cache first (persists across navigation) - increased cache duration to 1 hour
     if (!forceRefresh) {
       const store = usePotionStore.getState();
-      const cached = store.getCachedForecast(3 * 60 * 1000); // 3 min cache
+      const cached = store.getCachedForecast(60 * 60 * 1000); // 1 hour cache (increased from 3 min)
       if (cached) {
-        console.log('[FORECAST] Using cached forecast from store');
+        console.log('[FORECAST] Using cached forecast from store (1 hour cache)');
         setMinimumWitches(cached.minWitches);
         setDailySchedule(cached.schedule);
+        setLoadingForecast(false);
         return;
       }
     }
@@ -59,7 +60,7 @@ export default function Forecast() {
         fetchDailySchedule(null),
       ]);
       
-      // Cache in store for cross-page navigation
+      // Cache in store for cross-page navigation (1 hour cache)
       const store = usePotionStore.getState();
       store.setCachedForecast({
         minWitches: minWitchesData,
@@ -68,13 +69,26 @@ export default function Forecast() {
       
       setMinimumWitches(minWitchesData);
       setDailySchedule(scheduleData);
-      console.log('[FORECAST] Forecast updated and cached in store');
+      console.log('[FORECAST] Forecast updated and cached in store (1 hour cache)');
     } catch (err) {
       console.error("[FORECAST] Error loading forecast data:", err);
     } finally {
       setLoadingForecast(false);
     }
   }, []);
+
+  // Initialize forecast data from cache on mount (if available)
+  useEffect(() => {
+    const store = usePotionStore.getState();
+    const cached = store.getCachedForecast(60 * 60 * 1000); // 1 hour cache
+    
+    if (cached) {
+      console.log('[FORECAST] Initializing from cache on mount');
+      setMinimumWitches(cached.minWitches);
+      setDailySchedule(cached.schedule);
+      setLoadingForecast(false);
+    }
+  }, []); // Run once on mount
 
   useEffect(() => {
     const load = async () => {
@@ -136,8 +150,9 @@ export default function Forecast() {
 
         // OPTIMIZATION: Load forecast data in background (don't block UI)
         // This allows "Predicted Overflows" to show immediately
-        console.log("[FORECAST] Starting background forecast calculation...");
-        updateForecastData().catch(err => {
+        // Only fetch if cache doesn't exist or is expired (updateForecastData checks cache)
+        console.log("[FORECAST] Checking if forecast data needs to be fetched...");
+        updateForecastData(false).catch(err => {
           console.error("[FORECAST] Background forecast error:", err);
         });
       } catch (err) {
