@@ -19,7 +19,6 @@ const API_BASE =
   );
 
 export default function Forecast() {
-  const [mode, setMode] = useState("today");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [predictions, setPredictions] = useState([]);
@@ -116,7 +115,6 @@ export default function Forecast() {
           cauldrons,
           analyses,
           latest,
-          mode,
         });
 
         setPredictions(preds);
@@ -154,6 +152,7 @@ export default function Forecast() {
     };
 
     load();
+<<<<<<< HEAD
   }, [mode, updateForecastData]);
 
   // Update forecast when cauldron levels change (real-time updates)

@@ -88,7 +88,7 @@ export async function requireJson(res, label) {
 
 // ---------- PREDICTIONS ----------
 
-export function buildPredictions({ cauldrons, analyses, latest, mode }) {
+export function buildPredictions({ cauldrons, analyses, latest }) {
     const latestById = {};
     for (const row of latest || []) {
         if (!row.cauldron_id) continue;
@@ -144,10 +144,7 @@ export function buildPredictions({ cauldrons, analyses, latest, mode }) {
         if (remaining <= 0) {
             minutesToOverflow = 0;
         } else if (fillRate > 0) {
-            minutesToOverflow = remaining / fillRate;
-            if (mode === "tomorrow") {
-                minutesToOverflow *= 0.9 + Math.random() * 0.2;
-            }
+            minutesToOverflow = remaining / fillRate; // only "today" behavior
         }
 
         preds.push({

@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react'
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
+import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import bgDark from '../assets/potion_network_bg_dark.png'
 import bgLight from '../assets/potion_network_bg_light.png'
 import { AIHelpButton } from './AIExplanation'
@@ -20,15 +21,27 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
       } catch (e) {}
     }
   }, [propNodes.length, propLinks.length])
-  const ref = useRef(null)
+  const containerRef = useRef(null)
+  const svgRef = useRef(null)
   const [dims, setDims] = useState({ width: 800, height: 600 })
   const [hover, setHover] = useState(null)
   const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
   const bg = isDark ? bgDark : bgLight
 
+  // Zoom and pan state
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 })
+
+  // Zoom limits
+  const MIN_ZOOM = 0.5
+  const MAX_ZOOM = 3
+  const ZOOM_STEP = 0.2
+
   // responsive sizing observer
   useEffect(()=>{
-    const el = ref.current
+    const el = containerRef.current
     if(!el) return
     const resize = ()=> setDims({ width: Math.max(320, el.clientWidth), height: Math.max(240, el.clientHeight) })
     resize()
@@ -287,13 +300,189 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     [nodes]
   )
 
-  // tooltip helpers
+  // tooltip helpers - account for zoom and pan
   const toClient = (sx, sy) => {
-    const el = ref.current
+    const el = containerRef.current
     if(!el) return { left: sx, top: sy }
     const rect = el.getBoundingClientRect()
-    return { left: rect.left + (sx/viewW) * rect.width, top: rect.top + (sy/viewH) * rect.height }
+    // Apply zoom and pan transform to get screen position
+    const transformedX = (sx * zoom) + pan.x
+    const transformedY = (sy * zoom) + pan.y
+    return { 
+      left: rect.left + (transformedX/viewW) * rect.width, 
+      top: rect.top + (transformedY/viewH) * rect.height 
+    }
   }
+
+  // Convert screen coordinates to SVG coordinates (before transform)
+  const screenToSVG = useCallback((screenX, screenY) => {
+    const el = containerRef.current
+    if (!el) return { x: viewW / 2, y: viewH / 2 }
+    const rect = el.getBoundingClientRect()
+    // Convert screen coordinates to SVG viewBox coordinates
+    const svgX = ((screenX - rect.left) / rect.width) * viewW
+    const svgY = ((screenY - rect.top) / rect.height) * viewH
+    // Convert to SVG coordinate space (reverse the transform)
+    return {
+      x: (svgX - pan.x) / zoom,
+      y: (svgY - pan.y) / zoom
+    }
+  }, [viewW, viewH, pan, zoom])
+
+  // Zoom handlers
+  const handleZoom = useCallback((delta, centerX, centerY) => {
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + delta))
+    
+    if (centerX === undefined || centerY === undefined || newZoom === zoom) {
+      // Zoom to center if no point specified or zoom didn't change
+      setZoom(newZoom)
+      return
+    }
+
+    const el = containerRef.current
+    if (!el) {
+      setZoom(newZoom)
+      return
+    }
+
+    const rect = el.getBoundingClientRect()
+    // Convert screen coordinates to SVG viewBox coordinates
+    const svgX = ((centerX - rect.left) / rect.width) * viewW
+    const svgY = ((centerY - rect.top) / rect.height) * viewH
+    
+    // Get the content point that's under the cursor (before zoom change)
+    const contentX = (svgX - pan.x) / zoom
+    const contentY = (svgY - pan.y) / zoom
+    
+    // Calculate new pan so the same content point stays under the cursor
+    const newPanX = svgX - (contentX * newZoom)
+    const newPanY = svgY - (contentY * newZoom)
+    
+    setPan({ x: newPanX, y: newPanY })
+    setZoom(newZoom)
+  }, [MIN_ZOOM, MAX_ZOOM, zoom, viewW, viewH, pan])
+
+  const handleZoomIn = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    handleZoom(ZOOM_STEP, rect.left + rect.width / 2, rect.top + rect.height / 2)
+  }, [handleZoom, ZOOM_STEP])
+
+  const handleZoomOut = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    handleZoom(-ZOOM_STEP, rect.left + rect.width / 2, rect.top + rect.height / 2)
+  }, [handleZoom, ZOOM_STEP])
+
+  const handleResetZoom = useCallback(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [])
+
+  // Mouse wheel zoom
+  const handleWheel = useCallback((e) => {
+    e.preventDefault()
+    const delta = -e.deltaY * 0.001
+    handleZoom(delta, e.clientX, e.clientY)
+  }, [handleZoom])
+
+  // Pan handlers
+  const handleMouseDown = useCallback((e) => {
+    // Don't start panning if clicking on zoom controls
+    if (e.target.closest('button') || e.target.closest('[role="button"]')) {
+      return
+    }
+    if (e.button !== 0) return // Only left mouse button
+    e.preventDefault()
+    setIsPanning(true)
+    setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
+  }, [pan])
+
+  const handleMouseMove = useCallback((e) => {
+    if (!isPanning) return
+    e.preventDefault()
+    setPan({
+      x: e.clientX - panStart.x,
+      y: e.clientY - panStart.y
+    })
+  }, [isPanning, panStart])
+
+  const handleMouseUp = useCallback(() => {
+    setIsPanning(false)
+  }, [])
+
+  // Touch handlers for mobile
+  const touchStartRef = useRef(null)
+  const lastTouchDistanceRef = useRef(null)
+
+  const handleTouchStart = useCallback((e) => {
+    if (e.touches.length === 1) {
+      // Single touch - pan
+      const touch = e.touches[0]
+      setIsPanning(true)
+      setPanStart({ x: touch.clientX - pan.x, y: touch.clientY - pan.y })
+    } else if (e.touches.length === 2) {
+      // Two touches - pinch zoom
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      )
+      lastTouchDistanceRef.current = distance
+      touchStartRef.current = {
+        x: (touch1.clientX + touch2.clientX) / 2,
+        y: (touch1.clientY + touch2.clientY) / 2
+      }
+    }
+  }, [pan])
+
+  const handleTouchMove = useCallback((e) => {
+    e.preventDefault()
+    if (e.touches.length === 1 && isPanning) {
+      // Single touch - pan
+      const touch = e.touches[0]
+      setPan({
+        x: touch.clientX - panStart.x,
+        y: touch.clientY - panStart.y
+      })
+    } else if (e.touches.length === 2) {
+      // Two touches - pinch zoom
+      const touch1 = e.touches[0]
+      const touch2 = e.touches[1]
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      )
+      
+      if (lastTouchDistanceRef.current !== null && touchStartRef.current) {
+        const scale = distance / lastTouchDistanceRef.current
+        const delta = (scale - 1) * 0.5
+        handleZoom(delta, touchStartRef.current.x, touchStartRef.current.y)
+      }
+      lastTouchDistanceRef.current = distance
+    }
+  }, [isPanning, panStart, handleZoom])
+
+  const handleTouchEnd = useCallback(() => {
+    setIsPanning(false)
+    lastTouchDistanceRef.current = null
+    touchStartRef.current = null
+  }, [])
+
+  // Add event listeners for panning
+  useEffect(() => {
+    if (isPanning) {
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove)
+        window.removeEventListener('mouseup', handleMouseUp)
+      }
+    }
+  }, [isPanning, handleMouseMove, handleMouseUp])
 
   // smooth transitions: keep last fill values
   const lastFillRef = useRef({})
@@ -302,7 +491,7 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
   }, [data])
 
   return (
-    <div ref={ref} className={`card relative overflow-hidden rounded-2xl border border-neutral-700 ${className}`}>
+    <div className={`card relative overflow-hidden rounded-2xl border border-neutral-700 ${className}`}>
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <h3 className="panel-title">Potion Network</h3>
         <AIHelpButton 
@@ -320,8 +509,59 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
         />
       </div>
 
-      <div className="w-full h-[520px] relative">
-        <svg viewBox={`0 0 ${viewW} ${viewH}`} preserveAspectRatio="xMidYMid meet" className="w-full h-full">
+      <div 
+        ref={containerRef}
+        className="w-full h-[500px] relative cursor-grab active:cursor-grabbing select-none"
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{ touchAction: 'none' }}
+      >
+        {/* Zoom Controls */}
+        <div 
+          className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-panel-light/90 dark:bg-panel-dark/90 backdrop-blur-sm rounded-lg p-2 border border-border-light dark:border-border-dark shadow-lg"
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleZoomIn}
+            disabled={zoom >= MAX_ZOOM}
+            className="p-2 hover:bg-panel-dark dark:hover:bg-panel-light rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Zoom In"
+          >
+            <ZoomIn size={18} className="text-text-light dark:text-text-dark" />
+          </button>
+          <button
+            onClick={handleZoomOut}
+            disabled={zoom <= MIN_ZOOM}
+            className="p-2 hover:bg-panel-dark dark:hover:bg-panel-light rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Zoom Out"
+          >
+            <ZoomOut size={18} className="text-text-light dark:text-text-dark" />
+          </button>
+          <div className="border-t border-border-light dark:border-border-dark my-1" />
+          <button
+            onClick={handleResetZoom}
+            disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
+            className="p-2 hover:bg-panel-dark dark:hover:bg-panel-light rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Reset Zoom"
+          >
+            <RotateCcw size={18} className="text-text-light dark:text-text-dark" />
+          </button>
+          <div className="text-xs text-center text-text-light/60 dark:text-text-dark/60 px-1">
+            {Math.round(zoom * 100)}%
+          </div>
+        </div>
+
+        <svg 
+          ref={svgRef}
+          viewBox={`0 0 ${viewW} ${viewH}`} 
+          preserveAspectRatio="xMidYMid slice" 
+          className="w-full h-full"
+          style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
+        >
           <defs>
             {/* background image */}
             <pattern id="bgPattern" patternUnits="objectBoundingBox" width="1" height="1">
@@ -354,10 +594,17 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
 
           </defs>
 
-          {/* background */}
+          {/* Background - FIXED, stays in place */}
           <rect x={0} y={0} width={viewW} height={viewH} fill="url(#bgPattern)" />
           {isDark && <rect x={0} y={0} width={viewW} height={viewH} fill="#000" opacity="0.22" />}
 
+          {/* Clip path to keep content within viewBox */}
+          <clipPath id="contentClip">
+            <rect x={0} y={0} width={viewW} height={viewH} />
+          </clipPath>
+
+          {/* Transform group for zoom and pan - ONLY nodes and links */}
+          <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`} clipPath="url(#contentClip)">
           {/* edges (curved) */}
           <g>
             {propLinks.map((l, i) => {
@@ -458,13 +705,14 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
                       {/* percentage label */}
                       <text x={0} y={2} textAnchor="middle" fontSize={12} fontWeight={700} fill={isDark ? '#e6f0f6' : '#06202a'}>{pct}%</text>
 
-                      {/* name below */}
-                      <text x={0} y={nodeRadius + 20} textAnchor="middle" fontSize={11} fill={isDark ? '#9ca3af' : '#334155'}>{n.name}</text>
+                        {/* name above */}
+                        <text x={0} y={-(nodeRadius + 50)} textAnchor="middle" fontSize={11} fill={isDark ? '#9ca3af' : '#334155'}>{n.name}</text>
                     </g>
                   )}
                 </g>
               )
             })}
+            </g>
           </g>
 
         </svg>
@@ -473,7 +721,9 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
         {hover && hover.node && (
           <div style={{position: 'fixed', left: hover.pos.left + 12, top: hover.pos.top + 12, pointerEvents: 'none'}} className={`text-xs p-2 rounded-md shadow-lg ${isDark ? 'bg-neutral-800 text-white' : 'bg-white text-black'}`}>
             <div className="font-semibold">{hover.node.name}</div>
-            <div className="text-neutral-400 text-[11px]">{(hover.node.fillPercent||0)}% full</div>
+            {!hover.node.isMarket && hover.node.fillPercent != null && (
+              <div className="text-neutral-400 text-[11px]">{hover.node.fillPercent}% full</div>
+            )}
             <div className="text-[11px]">ID: <span className="font-mono">{hover.node.id}</span></div>
           </div>
         )}

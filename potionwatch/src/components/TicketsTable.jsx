@@ -48,14 +48,13 @@ export default function TicketsTable() {
   }, [])
 
   return (
-    <div className="card">
-      <h3 className="panel-title mb-3">Tickets vs Drains</h3>
-
+    <div className="card flex flex-col h-full min-h-0">
+      <h3 className="panel-title mb-3 flex-shrink-0">Tickets vs Drains</h3>
 
       {loading ? (
-        <div className="text-gray-400 text-sm py-4">Loading...</div>
+        <div className="text-text-light/70 dark:text-text-dark/70 text-sm py-4">Loading...</div>
       ) : rows.length === 0 ? (
-        <div className="text-gray-400 text-sm py-4">
+        <div className="text-text-light/70 dark:text-text-dark/70 text-sm py-4">
           No ticket vs drain data with non-zero drains.
         </div>
       ) : (
@@ -63,7 +62,7 @@ export default function TicketsTable() {
           <div className="max-h-64 overflow-y-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="text-gray-400 text-xs uppercase sticky top-0 bg-neutral-900/95 backdrop-blur">
+                <tr className="text-sm uppercase sticky top-0 bg-panel-light dark:bg-panel-dark text-text-light/80 dark:text-text-dark/80 backdrop-blur border-b border-border-light dark:border-border-dark">
                   <th className="px-3 py-2">Date</th>
                   <th className="px-3 py-2">Cauldron</th>
                   <th className="px-3 py-2">Ticket Volume</th>
@@ -75,7 +74,7 @@ export default function TicketsTable() {
                 {rows.map(r => {
                   const colorClass =
                     r.diff === 0
-                      ? 'text-gray-400'
+                      ? 'text-text-light/60 dark:text-text-dark/60'
                       : r.diff > 0
                         ? 'text-green-400'
                         : 'text-red-400'
@@ -83,18 +82,18 @@ export default function TicketsTable() {
                   return (
                     <tr
                       key={r.id}
-                      className="border-t border-neutral-800 hover:bg-neutral-800/60 transition-colors"
+                      className="border-t border-border-light dark:border-border-dark hover:bg-panel-light/50 dark:hover:bg-panel-dark/50 transition-colors"
                     >
-                      <td className="px-3 py-3 text-gray-100">
+                      <td className="px-3 py-3 text-text-light/70 dark:text-text-dark/70">
                         {r.date || '-'}
                       </td>
-                      <td className="px-3 py-3 text-gray-100">
+                      <td className="px-3 py-3 text-text-light/70 dark:text-text-dark/70">
                         {r.cauldron || '-'}
                       </td>
-                      <td className="px-3 py-3 text-gray-100">
+                      <td className="px-3 py-3 text-text-light dark:text-text-dark">
                         {Math.round(r.ticketVolume)} L
                       </td>
-                      <td className="px-3 py-3 text-gray-100">
+                      <td className="px-3 py-3 text-text-light dark:text-text-dark">
                         {Math.round(r.actualDrained)} L
                       </td>
                       <td className={`px-3 py-3 font-semibold ${colorClass}`}>
@@ -109,6 +108,6 @@ export default function TicketsTable() {
           </div>
         </div>
       )}
-      </div>
+    </div>
   )
 }

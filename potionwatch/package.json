@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "vite",
+    "clean": "rimraf node_modules/.vite dist",
+    "dev": "npm run clean && vite",
+    "dev:no-clean": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -24,6 +26,7 @@
     "@vitejs/plugin-react": "^5.1.0",
     "autoprefixer": "^10.4.14",
     "postcss": "^8.4.31",
+    "rimraf": "^5.0.10",
     "tailwindcss": "^3.4.14",
     "vite": "^5.1.0"
   }
