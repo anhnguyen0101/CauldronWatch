@@ -126,28 +126,50 @@ class EOGClient:
         GET /api/Data
         Fetch historical data for cauldrons
         Returns list of HistoricalDataDto (one per cauldron per timestamp)
+        
+        API expects start_date and end_date as Unix timestamps (integers)
         """
         params = {}
         if start_date:
-            params['start'] = start_date.isoformat()
+            # Convert to Unix timestamp (integer) - API expects Unix timestamps
+            params['start_date'] = int(start_date.timestamp())
+            print(f"📡 API call: /api/Data with start_date={params['start_date']} ({start_date.isoformat()})")
         if end_date:
-            params['end'] = end_date.isoformat()
+            # Convert to Unix timestamp (integer) - API expects Unix timestamps
+            params['end_date'] = int(end_date.timestamp())
+            print(f"📡 API call: /api/Data with end_date={params['end_date']} ({end_date.isoformat()})")
+        
+        if not params:
+            print(f"📡 API call: /api/Data (no date filters - fetching all data)")
         
         data = self._get("/api/Data", params=params)
+        print(f"📡 API response: Received {len(data) if isinstance(data, list) else 0} data points")
         
         # Transform API response (list of {timestamp, cauldron_levels}) 
         # into list of HistoricalDataDto (one per cauldron per timestamp)
         result = []
         if isinstance(data, list):
+            if len(data) > 0:
+                print(f"📡 Sample API data point: timestamp={data[0].get('timestamp')}, cauldron_levels keys={list(data[0].get('cauldron_levels', {}).keys())[:3]}")
             for point in data:
-                point_obj = HistoricalDataPointDto(**point)
-                for cid, level in point_obj.cauldron_levels.items():
-                    if cauldron_id is None or cid == cauldron_id:
-                        result.append(HistoricalDataDto(
-                            cauldron_id=cid,
-                            timestamp=point_obj.timestamp,
-                            level=level
-                        ))
+                try:
+                    point_obj = HistoricalDataPointDto(**point)
+                    for cid, level in point_obj.cauldron_levels.items():
+                        if cauldron_id is None or cid == cauldron_id:
+                            result.append(HistoricalDataDto(
+                                cauldron_id=cid,
+                                timestamp=point_obj.timestamp,
+                                level=level
+                            ))
+                except Exception as e:
+                    print(f"⚠️  Error transforming data point: {e}, point keys: {list(point.keys()) if isinstance(point, dict) else 'not a dict'}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+        else:
+            print(f"⚠️  API returned non-list data: {type(data)}, value: {str(data)[:200]}")
+        
+        print(f"📡 Transformed to {len(result)} HistoricalDataDto objects")
         return result
     
     def get_data_metadata(self) -> HistoricalDataMetadataDto:
@@ -179,9 +201,18 @@ class EOGClient:
         """
         GET /api/Information/couriers
         Get all courier information
+        API returns max_carrying_capacity, but our schema uses capacity
         """
         data = self._get("/api/Information/couriers")
-        return [CourierDto(**item) for item in data] if isinstance(data, list) else []
+        if isinstance(data, list):
+            # Transform max_carrying_capacity to capacity if needed
+            result = []
+            for item in data:
+                if 'max_carrying_capacity' in item and 'capacity' not in item:
+                    item['capacity'] = item['max_carrying_capacity']
+                result.append(CourierDto(**item))
+            return result
+        return []
     
     def get_cauldrons(self) -> List[CauldronDto]:
         """

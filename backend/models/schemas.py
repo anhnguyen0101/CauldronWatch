@@ -121,7 +121,17 @@ class CourierDto(BaseModel):
     courier_id: str
     name: Optional[str] = None
     capacity: Optional[float] = None
+    max_carrying_capacity: Optional[float] = None  # API field name
     speed: Optional[float] = None
+    
+    def __init__(self, **data):
+        # Map max_carrying_capacity to capacity if capacity is not provided
+        if 'max_carrying_capacity' in data and 'capacity' not in data:
+            data['capacity'] = data['max_carrying_capacity']
+        super().__init__(**data)
+    
+    class Config:
+        populate_by_name = True
 
 
 class CauldronLevelsDto(BaseModel):

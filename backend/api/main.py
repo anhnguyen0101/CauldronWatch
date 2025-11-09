@@ -559,48 +559,72 @@ async def get_discrepancies(
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time updates"""
     # Accept connection first (required by FastAPI)
-    await websocket.accept()
-    # Then register with manager
-    ws_manager.active_connections.append(websocket)
-    print(f"WebSocket connected. Total connections: {len(ws_manager.active_connections)}")
+    try:
+        await websocket.accept()
+    except Exception as e:
+        print(f"❌ Error accepting WebSocket: {e}")
+        return
+    
+    # Register with manager AFTER accepting
+    if websocket not in ws_manager.active_connections:
+        ws_manager.active_connections.append(websocket)
+    print(f"✅ WebSocket connected. Total connections: {len(ws_manager.active_connections)}")
     
     try:
         # Send initial connection message
-        await ws_manager.send_personal_message({
-            "type": "connected",
-            "message": "Connected to CauldronWatch real-time updates"
-        }, websocket)
+        try:
+            await ws_manager.send_personal_message({
+                "type": "connected",
+                "message": "Connected to CauldronWatch real-time updates"
+            }, websocket)
+        except Exception as e:
+            print(f"⚠️  Error sending initial WebSocket message: {e}")
+            # Don't break - connection might still be valid
         
-        # Keep connection alive - client just listens for broadcasts
-        # Don't wait for client messages, just keep connection open
-        # The periodic_update() background task will broadcast updates
-        while True:
-            import asyncio
-            try:
-                # Wait for client message (optional) or timeout
-                # This keeps the connection alive without blocking broadcasts
-                await asyncio.wait_for(
-                    websocket.receive_text(),
-                    timeout=60.0  # 60 second timeout - connection stays alive
-                )
-                # Client sent a message (optional - we don't need to process it)
-            except asyncio.TimeoutError:
-                # Timeout is normal - connection is still alive
-                # Send a ping to keep connection active
+        # Keep connection alive with a simple heartbeat
+        # The client doesn't need to send messages, we just broadcast
+        import asyncio
+        try:
+            # Wait for disconnect or client message
+            # Use a background task to keep connection alive
+            while True:
                 try:
-                    await ws_manager.send_personal_message({
-                        "type": "ping",
-                        "timestamp": datetime.now().isoformat()
-                    }, websocket)
-                except:
-                    # Connection closed
-                    break
+                    # Wait for any message from client (or disconnect)
+                    # This keeps the connection alive
+                    await asyncio.wait_for(
+                        websocket.receive_text(),
+                        timeout=30.0  # 30 second timeout
+                    )
+                    # Client sent a message - ignore it (we're just broadcasting)
+                except asyncio.TimeoutError:
+                    # Timeout is normal - connection is still alive
+                    # Check if connection is still valid by trying to send a ping
+                    try:
+                        if websocket.client_state.value == 1:  # CONNECTED
+                            await ws_manager.send_personal_message({
+                                "type": "ping",
+                                "timestamp": datetime.now().isoformat()
+                            }, websocket)
+                        else:
+                            # Connection is not in CONNECTED state
+                            break
+                    except Exception:
+                        # Error sending ping - connection is likely closed
+                        break
+        except WebSocketDisconnect:
+            # Normal disconnect
+            pass
     except WebSocketDisconnect:
         pass  # Normal disconnect
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        error_msg = str(e).lower()
+        if 'connection closed' not in error_msg and 'disconnect' not in error_msg:
+            print(f"❌ WebSocket error: {e}")
+            import traceback
+            traceback.print_exc()
     finally:
         ws_manager.disconnect(websocket)
+        print(f"🔌 WebSocket disconnected. Total connections: {len(ws_manager.active_connections)}")
 
 
 # ==================== Health Check ====================
@@ -683,26 +707,42 @@ async def periodic_update():
                 
                 # Broadcast to all connected WebSocket clients
                 # Enrich level data with cauldron metadata (max_volume) for frontend percentage calculation
-                if latest_levels:
-                    # Create a lookup map for cauldron metadata
-                    cauldron_map = {c.id: c for c in cauldrons}
+                if latest_levels and len(latest_levels) > 0:
+                    # Create a lookup map for cauldron metadata (use both id and cauldron_id property)
+                    cauldron_map = {}
+                    for c in cauldrons:
+                        cauldron_map[c.id] = c
+                        cauldron_map[c.cauldron_id] = c  # Also index by cauldron_id property
                     
                     # Enrich each level update with cauldron metadata
                     enriched_updates = []
                     for level_data in latest_levels:
-                        cauldron_info = cauldron_map.get(level_data.cauldron_id)
+                        # Try to find cauldron by cauldron_id first, then by id
+                        cauldron_info = cauldron_map.get(level_data.cauldron_id) or cauldron_map.get(getattr(level_data, 'id', None))
                         update_dict = level_data.model_dump()
                         # Add max_volume and capacity for frontend percentage calculation
                         if cauldron_info:
                             update_dict['max_volume'] = cauldron_info.max_volume
                             update_dict['capacity'] = cauldron_info.max_volume  # Alias for compatibility
                             update_dict['name'] = cauldron_info.name
+                            # Ensure cauldron_id is set
+                            update_dict['cauldron_id'] = level_data.cauldron_id
+                            # Log sample data for debugging
+                            if len(enriched_updates) < 2:
+                                print(f"📊 Broadcasting level update: {level_data.cauldron_id} = {level_data.level}L / {cauldron_info.max_volume}L = {round((level_data.level / cauldron_info.max_volume) * 100, 1)}%")
+                        else:
+                            print(f"⚠️  No cauldron info found for {level_data.cauldron_id} (available IDs: {list(cauldron_map.keys())[:5]}...)")
                         enriched_updates.append(update_dict)
                     
-                    await ws_manager.broadcast_cauldron_update({
-                        "cauldrons": enriched_updates,
-                        "timestamp": datetime.now().isoformat()
-                    })
+                    if enriched_updates:
+                        await ws_manager.broadcast_cauldron_update({
+                            "cauldrons": enriched_updates,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                else:
+                    # Log when no levels are available
+                    if int(current_time) % 60 == 0:  # Only log every minute to avoid spam
+                        print(f"⚠️  No latest levels to broadcast (cache may be empty)")
                 
                 # Check for new drain events (every 30 seconds)
                 if current_time - last_drain_check >= drain_check_interval:

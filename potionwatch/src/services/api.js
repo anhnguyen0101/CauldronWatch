@@ -12,29 +12,14 @@ const api = axios.create({
 
 // Fetch all cauldrons
 export async function fetchCauldrons() {
-  try {
-    const response = await api.get('/api/cauldrons')
-    return response.data
-  } catch (error) {
-    console.error('Error fetching cauldrons:', error)
-    // Fallback to mock data if backend is not available
-    return [
-      { id: 'cauldron_001', cauldron_id: 'cauldron_001', name: 'Crimson Brew', latitude: 33.2148, longitude: -97.1331, max_volume: 1000, level: 60 },
-      { id: 'cauldron_002', cauldron_id: 'cauldron_002', name: 'Sapphire Mist', latitude: 33.2155, longitude: -97.1325, max_volume: 800, level: 30 },
-      { id: 'cauldron_003', cauldron_id: 'cauldron_003', name: 'Golden Elixir', latitude: 33.2160, longitude: -97.1330, max_volume: 1200, level: 85 },
-    ]
-  }
+  const response = await api.get('/api/cauldrons')
+  return response.data
 }
 
 // Fetch latest levels for all cauldrons
 export async function fetchLatestLevels() {
-  try {
-    const response = await api.get('/api/data/latest')
-    return response.data
-  } catch (error) {
-    console.error('Error fetching latest levels:', error)
-    return []
-  }
+  const response = await api.get('/api/data/latest')
+  return response.data
 }
 
 // Fetch historical data
@@ -105,34 +90,50 @@ export async function fetchHistory(cauldronId = null, startDate = null, endDate 
     for(let i=0;i<10;i++){
       data.push({ time: new Date(now - (10 - i)*24*60*60000).toLocaleDateString(), avgLevel: Math.round(40 + 40*Math.abs(Math.sin(i/2))) })
     }
-    return data
+    
+    // Check if this cauldron already exists in this snapshot (keep latest)
+    const existingIndex = grouped[timeKey].cauldrons.findIndex(c => c.id === cauldronData.id)
+    if (existingIndex === -1) {
+      grouped[timeKey].cauldrons.push(cauldronData)
+    } else {
+      // Update with latest data
+      grouped[timeKey].cauldrons[existingIndex] = cauldronData
+    }
+  })
+  
+  const snapshots = Object.values(grouped).map(snapshot => ({
+    time: snapshot.time,
+    avgLevel: 0, // Will be calculated after percentage conversion
+    cauldrons: snapshot.cauldrons, // Include per-cauldron data (with levelLiters)
+    _levelsLiters: snapshot.levels // Temporary: store liters for conversion
+  }))
+  
+  console.log('📜 fetchHistory: Created', snapshots.length, 'snapshots (with levelLiters, will convert to % later)')
+  if (snapshots.length > 0) {
+    console.log('📜 Sample snapshot (before conversion):', {
+      time: snapshots[0].time,
+      cauldronsCount: snapshots[0].cauldrons.length,
+      sampleCauldron: snapshots[0].cauldrons[0]
+    })
   }
+  
+  return snapshots
 }
 
 // Fetch tickets
 export async function fetchTickets() {
-  try {
-    const response = await api.get('/api/tickets')
-    return response.data.transport_tickets || response.data.tickets || []
-  } catch (error) {
-    console.error('Error fetching tickets:', error)
-    return []
-  }
+  const response = await api.get('/api/tickets')
+  return response.data.transport_tickets || response.data.tickets || []
 }
 
 // Fetch drain events for a cauldron
 export async function fetchDrainEvents(cauldronId, date = null) {
-  try {
-    if (date) {
-      const response = await api.get(`/api/analysis/drains/${cauldronId}/${date}`)
-      return response.data.drain_events || []
-    } else {
-      const response = await api.get(`/api/analysis/cauldrons/${cauldronId}`)
-      return response.data.drain_events || []
-    }
-  } catch (error) {
-    console.error('Error fetching drain events:', error)
-    return []
+  if (date) {
+    const response = await api.get(`/api/analysis/drains/${cauldronId}/${date}`)
+    return response.data.drain_events || []
+  } else {
+    const response = await api.get(`/api/analysis/cauldrons/${cauldronId}`)
+    return response.data.drain_events || []
   }
 }
 
