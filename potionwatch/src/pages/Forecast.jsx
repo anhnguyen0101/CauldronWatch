@@ -39,15 +39,37 @@ export default function Forecast() {
   const forecastUpdateTimeoutRef = useRef(null);
 
   // Function to update forecast data
-  const updateForecastData = React.useCallback(async () => {
+  const updateForecastData = React.useCallback(async (forceRefresh = false) => {
+    // Check store cache first (persists across navigation)
+    if (!forceRefresh) {
+      const store = usePotionStore.getState();
+      const cached = store.getCachedForecast(3 * 60 * 1000); // 3 min cache
+      if (cached) {
+        console.log('[FORECAST] Using cached forecast from store');
+        setMinimumWitches(cached.minWitches);
+        setDailySchedule(cached.schedule);
+        return;
+      }
+    }
+    
     setLoadingForecast(true);
     try {
+      console.log('[FORECAST] Fetching fresh forecast data...');
       const [minWitchesData, scheduleData] = await Promise.all([
-        fetchMinimumWitches(24, 30),
-        fetchDailySchedule(null, 24),
+        fetchMinimumWitches(0.9, 15), // safety_margin=90%, unload_time=15min
+        fetchDailySchedule(null),
       ]);
+      
+      // Cache in store for cross-page navigation
+      const store = usePotionStore.getState();
+      store.setCachedForecast({
+        minWitches: minWitchesData,
+        schedule: scheduleData
+      });
+      
       setMinimumWitches(minWitchesData);
       setDailySchedule(scheduleData);
+      console.log('[FORECAST] Forecast updated and cached in store');
     } catch (err) {
       console.error("[FORECAST] Error loading forecast data:", err);
     } finally {
@@ -114,8 +136,12 @@ export default function Forecast() {
 
         setLoading(false);
 
-        // Load forecast data (minimum witches and daily schedule)
-        await updateForecastData();
+        // OPTIMIZATION: Load forecast data in background (don't block UI)
+        // This allows "Predicted Overflows" to show immediately
+        console.log("[FORECAST] Starting background forecast calculation...");
+        updateForecastData().catch(err => {
+          console.error("[FORECAST] Background forecast error:", err);
+        });
       } catch (err) {
         console.error("[FORECAST] Load error:", err);
         setError("Failed to load forecast data.");
@@ -144,9 +170,10 @@ export default function Forecast() {
     }
 
     forecastUpdateTimeoutRef.current = setTimeout(() => {
-      console.log("[FORECAST] Cauldron levels updated, recalculating forecast...");
-      updateForecastData();
-    }, 5000); // 5 second debounce
+      console.log("[FORECAST] Cauldron levels updated, checking if forecast needs update...");
+      // Don't force refresh - will use cache if recent enough
+      updateForecastData(false);
+    }, 10000); // 10 second debounce (increased from 5s)
 
     return () => {
       if (forecastUpdateTimeoutRef.current) {
@@ -164,7 +191,7 @@ export default function Forecast() {
         </h2>
         <div className="flex items-center gap-3">
           <button
-            onClick={updateForecastData}
+            onClick={() => updateForecastData(true)} // Force refresh
             disabled={loadingForecast}
             className="px-3 py-1.5 text-sm rounded-md bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             title="Refresh forecast data"

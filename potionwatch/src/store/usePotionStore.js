@@ -12,6 +12,9 @@ const usePotionStore = create((set, get) => ({
   lastUpdate: Date.now(),
   // Queue for updates that arrive before cauldrons are loaded
   pendingUpdates: [],
+  // Cached data for cross-page navigation (persists across route changes)
+  cachedDiscrepancies: {}, // { "dateRange": { data: [...], timestamp: Date } }
+  cachedForecast: null, // { minWitches: {...}, schedule: {...}, timestamp: Date }
 
   setCauldronLevel: (id, level) => {
     set(state => {
