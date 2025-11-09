@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS cauldrons (
     latitude FLOAT NOT NULL,
     longitude FLOAT NOT NULL,
     max_volume FLOAT NOT NULL,
+    x FLOAT,
+    y FLOAT,
     last_updated DATETIME
 );
 
@@ -47,6 +49,8 @@ CREATE TABLE IF NOT EXISTS market (
     description TEXT,
     latitude FLOAT NOT NULL,
     longitude FLOAT NOT NULL,
+    x FLOAT,
+    y FLOAT,
     last_updated DATETIME
 );
 

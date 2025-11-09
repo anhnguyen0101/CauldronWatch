@@ -61,8 +61,18 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     })), [propNodes]
   )
 
-  // Memoize bounds calculation - only recalculate when nodes change
+  // Check if all nodes have precomputed x, y coordinates (fastest path)
+  const allNodesHaveXY = useMemo(() => {
+    return nodes.length > 0 && nodes.every(n => typeof n.x === 'number' && typeof n.y === 'number')
+  }, [nodes])
+
+  // Memoize bounds calculation - only needed as fallback if x, y not available
   const bounds = useMemo(() => {
+    // If all nodes have precomputed x, y, we don't need bounds calculation
+    if (allNodesHaveXY) {
+      return null
+    }
+    
     const coords = nodes.map(n => getLatLng(n)).filter(c => c.lat != null && c.lng != null)
     
     if (coords.length === 0) {
@@ -99,10 +109,10 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     }
     
     if (process.env.NODE_ENV === 'development') {
-      console.log(`PotionNetworkGraph: Calculated bounds for ${coords.length} nodes:`, bounds)
+      console.log(`PotionNetworkGraph: Calculated bounds for ${coords.length} nodes (fallback mode):`, bounds)
     }
     return bounds
-  }, [nodes])
+  }, [nodes, allNodesHaveXY, getLatLng])
 
   const hasRealCoords = bounds != null
 
@@ -168,13 +178,24 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     return map
   }, [nodesWithoutCoords])
 
-  // Pre-compute all node positions - this is the key optimization!
+  // Pre-compute all node positions - use backend precomputed coordinates (FAST!)
   const nodePositions = useMemo(() => {
     const positionMap = new Map()
-    const mixedRadius = Math.min(viewW, viewH) * 0.15
 
     nodes.forEach((node, idx) => {
-      // Priority 1: Use real lat/lng coordinates if available
+      // Priority 1: Use precomputed x, y coordinates from backend (normalized 0-1)
+      // These are calculated once on the backend - fastest option!
+      if(typeof node.x === 'number' && typeof node.y === 'number'){
+        // Backend provides normalized coordinates (0-1), scale to viewBox
+        // Apply margin to keep nodes away from edges
+        positionMap.set(node.id, { 
+          x: margin + node.x * (viewW - 2 * margin), 
+          y: margin + node.y * (viewH - 2 * margin) 
+        })
+        return
+      }
+      
+      // Priority 2: Fallback to lat/lng calculation (only if x, y not available)
       if (hasRealCoords && bounds) {
         const coords = getLatLng(node)
         if (coords.lat != null && coords.lng != null) {
@@ -183,17 +204,7 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
         }
       }
       
-      // Priority 2: Use provided x/y coordinates (normalized 0-1 or absolute)
-      if(typeof node.x === 'number' && typeof node.y === 'number'){
-        if(Math.abs(node.x) <= 1 && Math.abs(node.y) <= 1){
-          positionMap.set(node.id, { x: node.x * viewW, y: node.y * viewH })
-          return
-        }
-        positionMap.set(node.id, { x: node.x, y: node.y })
-        return
-      }
-      
-      // Priority 3: Fallback layout
+      // Priority 3: Fallback to circular layout
       if (!hasRealCoords) {
         // No coordinates at all - use circular layout
         positionMap.set(node.id, autoPositions[idx] || { x: centerX, y: centerY })
@@ -202,6 +213,7 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
       
       // Mixed mode: hasRealCoords but this node doesn't have coordinates
       const nodeIndexInMixed = nodeIndexInMixedMap.get(node.id)
+      const mixedRadius = Math.min(viewW, viewH) * 0.15
       
       if (nodeIndexInMixed != null && nodesWithoutCoords.length > 1) {
         // Space them in a circle around bounds center
@@ -218,7 +230,7 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     })
 
     return positionMap
-  }, [nodes, hasRealCoords, bounds, latLngToXY, autoPositions, nodeIndexInMixedMap, nodesWithoutCoords, boundsCenter, centerX, centerY, viewW, viewH])
+  }, [nodes, viewW, viewH, margin, hasRealCoords, bounds, getLatLng, latLngToXY, autoPositions, nodeIndexInMixedMap, nodesWithoutCoords, boundsCenter, centerX, centerY])
 
   // Optimized pos function - O(1) lookup instead of calculations
   const pos = (node) => {

@@ -30,6 +30,14 @@ def init_db():
     """Initialize database - create all tables"""
     Base.metadata.create_all(bind=engine)
     print(f"✅ Database initialized at: {DB_PATH}")
+    
+    # Run migration to add x, y columns if they don't exist (for existing databases)
+    try:
+        from backend.database.migrate_add_xy_coordinates import migrate_add_xy_columns
+        migrate_add_xy_columns()
+    except Exception:
+        # Migration failures are non-fatal - columns might already exist
+        pass
 
 
 def get_db() -> Session:

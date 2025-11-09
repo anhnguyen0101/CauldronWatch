@@ -35,6 +35,7 @@ from backend.models.schemas import (
     GraphNodeDto,
 )
 from backend.api.analysis_service import AnalysisService
+import os
 
 
 _DISCREP_CACHE_LOCK = Lock()
@@ -48,6 +49,105 @@ def _set_last_discrepancies(res: DiscrepanciesDto) -> None:
     global _DISCREP_CACHE
     with _DISCREP_CACHE_LOCK:
         _DISCREP_CACHE = res
+
+
+def check_and_populate_database():
+    """Check if database is populated, and populate if empty or AUTO_POPULATE_DB is set"""
+    from backend.database.db import get_db_session
+    from backend.database.cache import CacheManager
+    
+    db = get_db_session()
+    try:
+        cache = CacheManager(db)
+        
+        # Check if database has essential data
+        cauldrons = cache.get_cached_cauldrons(max_age_minutes=999999)
+        market = cache.get_cached_market(max_age_minutes=999999)
+        
+        # Check if we have cauldrons and market with coordinates
+        has_data = (
+            cauldrons and len(cauldrons) > 0 and
+            market and
+            all(c.x is not None and c.y is not None for c in cauldrons) and
+            market.x is not None and market.y is not None
+        )
+        
+        if not has_data:
+            print("\n" + "=" * 70)
+            print("⚠️  DATABASE NOT FULLY POPULATED")
+            print("=" * 70)
+            print("Database is empty or missing precomputed coordinates.")
+            print("This will cause slow initial loading and missing data.")
+            print("\nOptions:")
+            print("1. Auto-populate now (recommended, takes 2-5 minutes)")
+            print("2. Skip and populate later with: python backend/populate_database.py")
+            print("3. Server will start anyway, but data will load incrementally")
+            
+            # Check environment variable for auto-populate
+            auto_populate = os.getenv("AUTO_POPULATE_DB", "false").lower() == "true"
+            
+            if auto_populate:
+                print("\n🔄 AUTO_POPULATE_DB=true - Starting automatic population...")
+                _populate_database_now(db)
+            else:
+                print("\n💡 Tip: Set AUTO_POPULATE_DB=true to auto-populate on startup")
+                print("   Or run manually: python backend/populate_database.py")
+                print("   Or use: python start_server.py (auto-populates)")
+                print("\n⏩ Starting server anyway (data will load on-demand)...")
+        else:
+            print(f"✅ Database populated: {len(cauldrons)} cauldrons, market, and coordinates ready")
+    except Exception as e:
+        print(f"⚠️  Error checking database: {e}")
+        print("⏩ Starting server anyway...")
+    finally:
+        db.close()
+
+
+def _populate_database_now(db):
+    """Populate database synchronously (essential data only)"""
+    try:
+        from backend.api.cached_eog_client import CachedEOGClient
+        from backend.database.cache import CacheManager
+        from backend.database.models import NetworkEdgeCache, CauldronCache, MarketCache
+        
+        client = CachedEOGClient(db, cache_ttl_minutes=999999)
+        cache = CacheManager(db)
+        
+        print("\n📦 Fetching cauldrons...")
+        cauldrons = client.get_cauldrons(use_cache=False)
+        print(f"   ✅ Fetched {len(cauldrons)} cauldrons")
+        
+        print("\n📦 Fetching market...")
+        market = client.get_market(use_cache=False)
+        print(f"   ✅ Fetched market: {market.name}")
+        
+        print("\n📦 Verifying and calculating positions...")
+        cache.calculate_and_store_node_positions()
+        
+        # Check positions are calculated
+        cached_cauldrons = cache.get_cached_cauldrons(max_age_minutes=999999)
+        cached_market = cache.get_cached_market(max_age_minutes=999999)
+        cauldrons_with_xy = sum(1 for c in cached_cauldrons if c.x is not None and c.y is not None) if cached_cauldrons else 0
+        market_has_xy = cached_market and cached_market.x is not None and cached_market.y is not None
+        
+        print(f"   ✅ Positions calculated: {cauldrons_with_xy}/{len(cached_cauldrons) if cached_cauldrons else 0} cauldrons, market: {market_has_xy}")
+        
+        print("\n📦 Fetching network...")
+        network = client.get_network(use_cache=False)
+        print(f"   ✅ Fetched {len(network.edges)} network edges")
+        
+        print("\n📦 Fetching couriers...")
+        couriers = client.get_couriers(use_cache=False)
+        print(f"   ✅ Fetched {len(couriers)} couriers")
+        
+        print("\n✅ Essential database population complete!")
+        print("   (Historical data and tickets will load on-demand via API)")
+        print("   (Run 'python backend/populate_database.py' for full population)")
+    except Exception as e:
+        print(f"❌ Error populating database: {e}")
+        import traceback
+        traceback.print_exc()
+        print("   Server will continue, but data may be incomplete")
 
 def _get_last_discrepancies() -> Optional[DiscrepanciesDto]:
     with _DISCREP_CACHE_LOCK:
@@ -75,6 +175,9 @@ async def lifespan(app: FastAPI):
     print("Initializing database...")
     init_db()
     print("✅ Database ready")
+    
+    # Check and optionally populate database
+    check_and_populate_database()
     
     # Start background task for periodic updates
     print("Starting background data fetcher...")

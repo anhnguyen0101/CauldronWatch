@@ -22,40 +22,41 @@ export default function Overview(){
   const market = usePotionStore(s => s.market)
 
   // Build data object expected by PotionNetworkGraph ({ nodes, links })
+  // Use precomputed x, y coordinates from backend (normalized 0-1)
   const nodes = cauldrons.map(c => {
-    // Support multiple possible id/field names from backend
-    const lat = c.latitude ?? c.lat
-    const lng = c.longitude ?? c.lng
-    
     return {
       id: c.cauldron_id || c.id || c.cauldronId,
       name: c.name || c.label || (`${c.cauldron_id || c.id}`),
       // convert store level (0..100) to fillPercent for graph
       fillPercent: c.level ?? c.fillPercent ?? 0,
       status: c.status || 'normal',
-      // Include both formats for maximum compatibility
-      lat: typeof lat === 'number' ? lat : undefined,
-      lng: typeof lng === 'number' ? lng : undefined,
-      latitude: typeof lat === 'number' ? lat : undefined,
-      longitude: typeof lng === 'number' ? lng : undefined,
+      // Use precomputed x, y coordinates from backend (normalized 0-1)
+      // These are calculated once on the backend and stored in the database
+      x: typeof c.x === 'number' ? c.x : undefined,
+      y: typeof c.y === 'number' ? c.y : undefined,
+      // Also include lat/lng for backward compatibility and MapView
+      lat: c.latitude ?? c.lat,
+      lng: c.longitude ?? c.lng,
+      latitude: c.latitude ?? c.lat,
+      longitude: c.longitude ?? c.lng,
       isMarket: false
     }
   })
 
   if (market) {
-    const marketLat = market.latitude ?? market.lat
-    const marketLng = market.longitude ?? market.lng
-    
     nodes.push({
       id: market.id || 'market_001',
       name: market.name || 'Enchanted Market',
       fillPercent: 0,
       status: 'normal',
-      // Include both formats for maximum compatibility
-      lat: typeof marketLat === 'number' ? marketLat : undefined,
-      lng: typeof marketLng === 'number' ? marketLng : undefined,
-      latitude: typeof marketLat === 'number' ? marketLat : undefined,
-      longitude: typeof marketLng === 'number' ? marketLng : undefined,
+      // Use precomputed x, y coordinates from backend (normalized 0-1)
+      x: typeof market.x === 'number' ? market.x : undefined,
+      y: typeof market.y === 'number' ? market.y : undefined,
+      // Also include lat/lng for backward compatibility
+      lat: market.latitude ?? market.lat,
+      lng: market.longitude ?? market.lng,
+      latitude: market.latitude ?? market.lat,
+      longitude: market.longitude ?? market.lng,
       isMarket: true
     })
   }
