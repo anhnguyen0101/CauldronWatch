@@ -15,7 +15,6 @@ const API_BASE =
   );
 
 export default function Forecast() {
-  const [mode, setMode] = useState("today");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [predictions, setPredictions] = useState([]);
@@ -63,7 +62,6 @@ export default function Forecast() {
           cauldrons,
           analyses,
           latest,
-          mode,
         });
 
         setPredictions(preds);
@@ -94,7 +92,7 @@ export default function Forecast() {
     };
 
     load();
-  }, [mode]);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -103,27 +101,11 @@ export default function Forecast() {
         <h2 className="text-3xl font-semibold text-text-light dark:text-slate-50">
           Forecast &amp; Routes
         </h2>
-        <div className="inline-flex bg-panel-light text-text-light dark:bg-slate-800 dark:text-slate-300 rounded-full p-1 gap-1">
-          <button
-            onClick={() => setMode("today")}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${mode === "today"
-              ? "bg-sky-500 text-white"
-              : "hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-          >
-            Today
-          </button>
-          <button
-            onClick={() => setMode("tomorrow")}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${mode === "tomorrow"
-              ? "bg-sky-500 text-white"
-              : "hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-          >
-            Simulate Tomorrow
-          </button>
-        </div>
+        <span className="text-xs text-slate-500">
+          Based on latest live fill rates
+        </span>
       </div>
+
 
       {/* Debug */}
       <DebugPanel
