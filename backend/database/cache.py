@@ -55,6 +55,8 @@ class CacheManager:
                     max_volume=cauldron.max_volume
                 ))
         self.db.commit()
+        # Recalculate positions after updating cauldrons
+        self.calculate_and_store_node_positions()
     
     def get_cached_cauldrons(self, max_age_minutes: int = 5) -> Optional[List[CauldronDto]]:
         """Get cached cauldrons if fresh enough"""
@@ -69,7 +71,9 @@ class CacheManager:
                 name=c.name,
                 latitude=c.latitude,
                 longitude=c.longitude,
-                max_volume=c.max_volume
+                max_volume=c.max_volume,
+                x=c.x,
+                y=c.y
             ) for c in cached]
         return None
     
@@ -211,6 +215,8 @@ class CacheManager:
                 longitude=market.longitude
             ))
         self.db.commit()
+        # Recalculate positions after updating market
+        self.calculate_and_store_node_positions()
     
     def get_cached_market(self, max_age_minutes: int = 5) -> Optional[MarketDto]:
         """Get cached market if fresh enough"""
@@ -225,7 +231,9 @@ class CacheManager:
                 name=cached.name,
                 description=cached.description,
                 latitude=cached.latitude,
-                longitude=cached.longitude
+                longitude=cached.longitude,
+                x=cached.x,
+                y=cached.y
             )
         return None
     
@@ -379,6 +387,85 @@ class CacheManager:
                 return None
         return None
 
+    def calculate_and_store_node_positions(self):
+        """Calculate normalized positions (0-1) for all nodes based on geographic bounds"""
+        from backend.database.models import CauldronCache, MarketCache
+        import json
+        
+        # Get all nodes
+        cauldrons = self.db.query(CauldronCache).all()
+        market = self.db.query(MarketCache).first()
+        
+        # Collect all coordinates
+        all_coords = []
+        for c in cauldrons:
+            if c.latitude is not None and c.longitude is not None:
+                all_coords.append(('cauldron', c.id, c.latitude, c.longitude))
+        if market and market.latitude is not None and market.longitude is not None:
+            all_coords.append(('market', market.id, market.latitude, market.longitude))
+        
+        if not all_coords:
+            return
+        
+        # Calculate bounds
+        lats = [c[2] for c in all_coords]
+        lngs = [c[3] for c in all_coords]
+        
+        minLat = min(lats)
+        maxLat = max(lats)
+        minLng = min(lngs)
+        maxLng = max(lngs)
+        
+        latRange = maxLat - minLat
+        lngRange = maxLng - minLng
+        
+        # Handle edge case where all points are the same or very close
+        hasRange = latRange > 0.0001 and lngRange > 0.0001
+        padding = 0.1 if hasRange else 0.05
+        effectiveLatRange = latRange or 0.02  # ~2km at equator
+        effectiveLngRange = lngRange or 0.02  # ~2km at equator
+        
+        bounds = {
+            'minLat': minLat - effectiveLatRange * padding,
+            'maxLat': maxLat + effectiveLatRange * padding,
+            'minLng': minLng - effectiveLngRange * padding,
+            'maxLng': maxLng + effectiveLngRange * padding
+        }
+        
+        # Store bounds in metadata
+        self.set_cache_metadata('network_bounds', json.dumps(bounds))
+        
+        # Calculate normalized positions (0-1 range)
+        boundsLatRange = bounds['maxLat'] - bounds['minLat']
+        boundsLngRange = bounds['maxLng'] - bounds['minLng']
+        
+        for node_type, node_id, lat, lng in all_coords:
+            # Normalize to 0-1 range
+            if boundsLngRange > 0.001:
+                normalized_x = (lng - bounds['minLng']) / boundsLngRange
+            else:
+                normalized_x = 0.5
+            
+            # Flip Y axis (latitude increases upward, but SVG Y increases downward)
+            if boundsLatRange > 0.001:
+                normalized_y = 1 - ((lat - bounds['minLat']) / boundsLatRange)
+            else:
+                normalized_y = 0.5
+            
+            # Update node
+            if node_type == 'cauldron':
+                cauldron = self.db.query(CauldronCache).filter_by(id=node_id).first()
+                if cauldron:
+                    cauldron.x = normalized_x
+                    cauldron.y = normalized_y
+            elif node_type == 'market':
+                market_obj = self.db.query(MarketCache).filter_by(id=node_id).first()
+                if market_obj:
+                    market_obj.x = normalized_x
+                    market_obj.y = normalized_y
+        
+        self.db.commit()
+    
     def haversine_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """
         Calculate the great circle distance between two points 

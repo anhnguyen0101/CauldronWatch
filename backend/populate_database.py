@@ -31,10 +31,18 @@ def verify_data_completeness(db):
         issues.append("❌ No cauldrons found in database")
     else:
         print(f"   ✅ Cauldrons: {len(cauldrons)} records")
-        # Check for missing coordinates
+        # Check for missing coordinates and x, y positions
+        cauldrons_without_coords = 0
+        cauldrons_without_positions = 0
         for c in cauldrons:
             if c.latitude is None or c.longitude is None:
                 issues.append(f"❌ Cauldron {c.id} missing coordinates")
+                cauldrons_without_coords += 1
+            if c.x is None or c.y is None:
+                warnings.append(f"⚠️  Cauldron {c.id} missing x, y positions (should be calculated)")
+                cauldrons_without_positions += 1
+        if cauldrons_without_coords == 0 and cauldrons_without_positions == 0:
+            print(f"      ✅ All cauldrons have coordinates and positions calculated")
     
     # 2. Verify market
     market = cache.get_cached_market(max_age_minutes=999999)
@@ -44,6 +52,10 @@ def verify_data_completeness(db):
         print(f"   ✅ Market: 1 record")
         if market.latitude is None or market.longitude is None:
             issues.append(f"❌ Market {market.id} missing coordinates")
+        if market.x is None or market.y is None:
+            warnings.append(f"⚠️  Market {market.id} missing x, y positions (should be calculated)")
+        else:
+            print(f"      ✅ Market has coordinates and positions calculated")
     
     # 3. Verify network edges
     network = cache.get_cached_network(max_age_minutes=999999)
@@ -158,6 +170,22 @@ def populate_all_data():
         # Verify it's cached
         cached_market = cache.get_cached_market(max_age_minutes=999999)
         print(f"   💾 Verified: {1 if cached_market else 0} market in database")
+        
+        # 2.4. Ensure positions are calculated (should be done automatically, but verify)
+        print("\n2.4️⃣ Verifying node positions are calculated...")
+        # Positions are automatically calculated when cauldrons and market are cached
+        # But let's verify and recalculate if needed
+        cache.calculate_and_store_node_positions()
+        # Check if positions are stored
+        all_cauldrons = db.query(CauldronCache).all()
+        cauldrons_with_xy = sum(1 for c in all_cauldrons if c.x is not None and c.y is not None)
+        market_obj = db.query(MarketCache).first()
+        market_with_xy = 1 if market_obj and market_obj.x is not None and market_obj.y is not None else 0
+        print(f"   ✅ Cauldrons with x, y positions: {cauldrons_with_xy}/{len(all_cauldrons)}")
+        print(f"   ✅ Market with x, y positions: {market_with_xy}/1")
+        if cauldrons_with_xy < len(all_cauldrons) or market_with_xy < 1:
+            print(f"   ⚠️  Warning: Some nodes missing x, y positions - recalculating...")
+            cache.calculate_and_store_node_positions()
         
         # 2.5. Fetch and cache network (AFTER cauldrons and market - needs coordinates)
         print("\n2.5️⃣ Fetching network graph...")
@@ -275,13 +303,13 @@ def populate_all_data():
         print("   - VS Code SQLite extension")
         print("   - Any SQLite viewer")
         print("\n📋 Tables to check:")
-        print("   - cauldrons")
+        print("   - cauldrons (with x, y coordinates)")
         print("   - historical_data")
         print("   - tickets")
-        print("   - market")
+        print("   - market (with x, y coordinates)")
         print("   - network_edges (with weight and distance)")
         print("   - couriers")
-        print("   - cache_metadata")
+        print("   - cache_metadata (includes network_bounds)")
         
     except Exception as e:
         print(f"\n❌ Error: {e}")

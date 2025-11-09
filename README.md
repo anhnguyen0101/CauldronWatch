@@ -8,6 +8,7 @@
 - [ ] Set up GitHub repo
 - [ ] Assign roles to 5 team members
 - [ ] Install dependencies
+- [ ] **Start server with `python start_server.py` (automatically populates database)**
 
 ### Hour 1-3 (Foundation)
 - [ ] Document API endpoints in shared doc
@@ -79,6 +80,30 @@
 - `backend/api/eog_client.py`
 - `backend/api/websocket.py`
 - `backend/models/*.py`
+
+**✨ Automatic Setup:**
+The server now automatically populates the database on startup! Just run:
+```bash
+python start_server.py
+```
+
+Or set the environment variable:
+```bash
+AUTO_POPULATE_DB=true uvicorn backend.api.main:app --reload
+```
+
+**What happens automatically:**
+1. Server checks if database is populated
+2. If empty, automatically fetches essential data from EOG API
+3. Calculates and stores precomputed x, y coordinates (normalized 0-1)
+4. Calculates network edge weights and distances
+5. Server starts immediately with data ready
+
+**Why this matters:**
+- Precomputed coordinates make the frontend network visualization **much faster**
+- All data is cached locally, reducing API calls and improving performance
+- The database includes computed fields (weight, distance, x, y) that aren't in the original API
+- No manual steps needed - just start the server!
 
 ---
 
@@ -262,6 +287,7 @@ After 9 hours, you should have:
 ✅ Automatic drain event detection
 ✅ Dynamic ticket matching
 ✅ Discrepancy alerts (Critical/Warning/Info)
+✅ Fast network visualization using precomputed coordinates
 
 ### Bonus Features
 ✅ Minimum witches calculation
@@ -353,19 +379,45 @@ After 9 hours, you should have:
 python explore_api.py
 ```
 
-2. **While that runs, divide into teams:**
+2. **Start the server (database auto-populates):**
+```bash
+# Easy way - automatically populates database on startup
+python start_server.py
+
+# Or manually populate first (optional):
+python backend/populate_database.py
+uvicorn backend.api.main:app --reload
+```
+
+**✨ NEW: Automatic Database Population!**
+The server now automatically checks and populates the database on startup:
+- Checks if database has data and precomputed coordinates
+- If empty, automatically fetches and caches essential data
+- Calculates x, y coordinates for fast network visualization
+- Server starts immediately (no waiting for full population)
+
+**What gets populated automatically:**
+- Cauldrons with coordinates
+- Market with coordinates  
+- Network edges with weights and distances
+- Couriers
+- Precomputed x, y coordinates for visualization
+
+**Note:** Historical data and tickets load on-demand via API (faster startup).
+
+3. **While that runs, divide into teams:**
 - Assign the 5 roles
 - Create shared Google Doc for API documentation
 - Set up GitHub repo
 
-3. **Read the relevant guide for your role:**
+4. **Read the relevant guide for your role:**
 - Backend → `PROJECT_STRUCTURE.md` (Person 1 section)
 - Data Analysis → `ALGORITHMS.md` (Drain Detection)
 - Detection → `ALGORITHMS.md` (Ticket Matching)
 - Frontend → `PROJECT_STRUCTURE.md` (Person 4 section)
 - Optimization → `ALGORITHMS.md` (Route Optimization)
 
-4. **Hour 1 sync-up:**
+5. **Hour 1 sync-up:**
 - Share API findings
 - Finalize data models
 - Set up communication channels
@@ -406,9 +458,11 @@ You're on track if by:
 
 **Hour 3:**
 - [ ] All EOG endpoints documented
+- [ ] Server started (database auto-populated on startup)
 - [ ] Can fetch and display cauldron list
 - [ ] Historical data loading
 - [ ] Basic React app running
+- [ ] Network visualization showing cauldrons and market with precomputed coordinates
 
 **Hour 5:**
 - [ ] Drain detection algorithm working
@@ -453,11 +507,13 @@ This challenge is absolutely achievable in 9 hours with 5 people!
 
 ### File Overview
 ```
-explore_api.py              # Run this first!
-API_EXPLORATION_GUIDE.md    # Manual API exploration
-PROJECT_STRUCTURE.md        # Team roles & code templates
-ALGORITHMS.md               # Core algorithm pseudocode
-DEMO_SCRIPT.md             # Presentation guide
+start_server.py                   # 🚀 Start server with auto-populate (RECOMMENDED)
+explore_api.py                    # Run this first to explore the API
+backend/populate_database.py      # Manual database population (optional, server does this automatically)
+API_EXPLORATION_GUIDE.md          # Manual API exploration
+PROJECT_STRUCTURE.md              # Team roles & code templates
+ALGORITHMS.md                     # Core algorithm pseudocode
+DEMO_SCRIPT.md                    # Presentation guide
 ```
 
 ### Key URLs
@@ -465,6 +521,44 @@ DEMO_SCRIPT.md             # Presentation guide
 - Swagger: https://hackutd2025.eog.systems/swagger/index.html
 - (Your backend will run on: http://localhost:8000)
 - (Your frontend will run on: http://localhost:5173)
+
+### Database Setup (AUTOMATIC - No Manual Step Needed!)
+
+**Option 1: Automatic (Recommended)**
+The server now automatically checks and populates the database on startup!
+
+```bash
+# Easy way - auto-populates database on startup
+python start_server.py
+
+# Or use environment variable
+AUTO_POPULATE_DB=true uvicorn backend.api.main:app --reload
+```
+
+**Option 2: Manual Population**
+If you prefer to populate manually before starting:
+
+```bash
+python backend/populate_database.py
+uvicorn backend.api.main:app --reload
+```
+
+**What happens automatically:**
+- Server checks if database is populated on startup
+- If empty or missing coordinates, it automatically fetches and caches data
+- Calculates precomputed x, y coordinates (normalized 0-1) for fast visualization
+- Calculates network edge weights and distances using Haversine formula
+- Server starts immediately (population happens in background if needed)
+
+**Database location:** `data/cauldronwatch.db`
+
+**Why this matters:**
+- Frontend network visualization requires precomputed coordinates for optimal performance
+- All computed fields (x, y, weight, distance) are stored in the database
+- Local caching reduces API calls and improves response times
+- Coordinates are calculated once on the backend and reused for fast rendering
+
+**Note:** The server will start even if database is empty, but data will load incrementally (slower). Use `start_server.py` or set `AUTO_POPULATE_DB=true` for automatic population.
 
 ### Important Constants
 ```python

@@ -23,12 +23,16 @@ export default function useInit(){
     fetchCauldrons().then(cauldrons => {
       console.log('📦 Fetched cauldrons from backend:', cauldrons.length)
       // Transform backend format to frontend format
-      // Backend returns: {id, latitude, longitude, max_volume, name}
+      // Backend returns: {id, latitude, longitude, max_volume, name, x, y}
+      // x, y are precomputed normalized coordinates (0-1) from backend
       const transformed = cauldrons.map(c => {
         const cauldronId = c.cauldron_id || c.id
         return {
           id: cauldronId,
           name: c.name || cauldronId,
+          // Precomputed x, y coordinates from backend (normalized 0-1)
+          x: c.x,
+          y: c.y,
           // Support both lat/lng and latitude/longitude formats
           lat: c.latitude ?? c.lat,
           lng: c.longitude ?? c.lng,
