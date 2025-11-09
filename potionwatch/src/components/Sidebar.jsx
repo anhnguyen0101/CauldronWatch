@@ -13,12 +13,12 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(true)
 
   return (
-    <aside className={`relative bg-neutral-950 text-gray-200 border-r border-neutral-800 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}>
+  <aside className={`relative bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}>
       <div className="p-4 flex items-start justify-between">
         <button
           aria-label={collapsed ? 'Open sidebar' : 'Collapse sidebar'}
           onClick={() => setCollapsed(s => !s)}
-          className="p-2 rounded-md hover:bg-neutral-800/40 text-gray-300"
+          className="p-2 rounded-md hover:bg-neutral-800/40 text-black dark:text-gray-300"
         >
           {collapsed ? (
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
@@ -46,7 +46,7 @@ export default function Sidebar() {
               key={l.to}
               to={l.to}
               className={({ isActive }) =>
-                `block px-4 py-2 rounded-lg ${isActive ? 'bg-neutral-800/60 text-white' : 'hover:bg-neutral-800/40 text-gray-300'}`
+                `block px-4 py-2 rounded-lg ${isActive ? 'bg-neutral-800/60 text-white' : 'hover:bg-neutral-800/40 text-black dark:text-gray-300'}`
               }
               end
             >
