@@ -875,18 +875,33 @@ async def detect_discrepancies(
 
         service = AnalysisService(db)
 
-        # Optional: avoid stale wide cache if a window is specified
-        use_cache_for_analysis = use_cache and not (start_dt or end_dt)
-
+        # Always use cache for analysis (it respects start/end date filtering)
+        # The analysis service will filter drains by the date range we provide
         analyses = service.analyze_all_cauldrons(
             start=start_dt,
             end=end_dt,
-            use_cache=use_cache_for_analysis
+            use_cache=use_cache
         )
 
         drains: List[DrainEventDto] = []
         for _, ca in analyses.items():
-            drains.extend(ca.drain_events)
+            # Additional safety: filter drains by date range if specified
+            if start_dt or end_dt:
+                filtered_drains = []
+                for drain in ca.drain_events:
+                    try:
+                        drain_date = datetime.fromisoformat(drain.start_time.replace('Z', '+00:00')).date()
+                        if start_dt and drain_date < start_dt.date():
+                            continue
+                        if end_dt and drain_date > end_dt.date():
+                            continue
+                        filtered_drains.append(drain)
+                    except (ValueError, AttributeError):
+                        # If we can't parse the date, include it (safer)
+                        filtered_drains.append(drain)
+                drains.extend(filtered_drains)
+            else:
+                drains.extend(ca.drain_events)
 
         result = reconcile_from_live(tickets_dto, drains)
         
