@@ -890,20 +890,39 @@ async def detect_discrepancies(
 
         result = reconcile_from_live(tickets_dto, drains)
         
-        # If start_date == end_date, filter discrepancies to exact date only
-        if start_dt and end_dt and start_dt.date() == end_dt.date():
-            exact_date = start_dt.date()
+        # Filter discrepancies to the specified date range
+        if start_dt or end_dt:
             before_count = len(result.discrepancies)
-            result.discrepancies = [
-                d for d in result.discrepancies
-                if d.date and datetime.strptime(d.date, "%Y-%m-%d").date() == exact_date
-            ]
+            start_date_obj = start_dt.date() if start_dt else None
+            end_date_obj = end_dt.date() if end_dt else None
+            
+            filtered_discrepancies = []
+            for d in result.discrepancies:
+                if not d.date:
+                    continue
+                try:
+                    disc_date = datetime.strptime(d.date, "%Y-%m-%d").date()
+                    # Check if date is within range
+                    if start_date_obj and disc_date < start_date_obj:
+                        continue
+                    if end_date_obj and disc_date > end_date_obj:
+                        continue
+                    filtered_discrepancies.append(d)
+                except (ValueError, TypeError):
+                    # Skip discrepancies with invalid dates
+                    continue
+            
+            result.discrepancies = filtered_discrepancies
             # Recalculate counts after filtering
             result.total_discrepancies = len(result.discrepancies)
             result.critical_count = sum(1 for d in result.discrepancies if d.severity == "critical")
             result.warning_count = sum(1 for d in result.discrepancies if d.severity == "warning")
             result.info_count = sum(1 for d in result.discrepancies if d.severity == "info")
-            print(f"   Filtered to exact date {exact_date}: {before_count} -> {result.total_discrepancies} discrepancies")
+            
+            if start_date_obj == end_date_obj:
+                print(f"   Filtered to exact date {start_date_obj}: {before_count} -> {result.total_discrepancies} discrepancies")
+            else:
+                print(f"   Filtered to date range {start_date_obj} to {end_date_obj}: {before_count} -> {result.total_discrepancies} discrepancies")
         
         _set_last_discrepancies(result, start_dt, end_dt)
         print(f"✅ Detection complete: {result.total_discrepancies} discrepancies found")
