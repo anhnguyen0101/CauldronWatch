@@ -20,7 +20,7 @@ export function startSocket(onMessage) {
       ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
-        console.log('✅ WebSocket connected')
+        console.log('✅ WebSocket connected to', wsUrl)
         reconnectAttempts = 0
         onMessage({ type: 'connected', message: 'Connected to CauldronWatch' })
       }
@@ -30,14 +30,19 @@ export function startSocket(onMessage) {
           const data = JSON.parse(event.data)
           
           if (data.type === 'cauldron_update') {
-            console.log('📨 WebSocket: Cauldron update received')
+            console.log('📨 WebSocket: Cauldron update received', data)
             // Transform backend format to frontend format
+            if (!data.data || !data.data.cauldrons) {
+              console.error('❌ WebSocket: Invalid cauldron_update format - missing data.data.cauldrons', data)
+              return
+            }
             const updates = data.data.cauldrons.map(c => ({
               id: c.cauldron_id || c.id,
               level: Math.round((c.level / (c.capacity || c.max_volume || 1000)) * 100), // Convert to percentage
               rawLevel: c.level,
               capacity: c.capacity || c.max_volume || 1000
             }))
+            console.log('📨 WebSocket: Transformed updates', updates)
             onMessage({ type: 'levels', data: updates })
           } else if (data.type === 'drain_event') {
             console.log('💧 WebSocket: Drain event received', data.data)

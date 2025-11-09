@@ -38,30 +38,65 @@ export async function fetchLatestLevels() {
 }
 
 // Fetch historical data
-export async function fetchHistory(cauldronId = null, startDate = null, endDate = null) {
+export async function fetchHistory(cauldronId = null, startDate = null, endDate = null, cauldronsMap = null) {
   try {
     const params = {}
     if (cauldronId) params.cauldron_id = cauldronId
     if (startDate) params.start = startDate
     if (endDate) params.end = endDate
     
+    // Add limit to prevent fetching too much data (max 1000 points)
+    params.limit = 1000
+    
+    console.log('📊 Fetching history with params:', { cauldronId, startDate, endDate, limit: params.limit })
+    const startTime = Date.now()
     const response = await api.get('/api/data', { params })
+    const fetchTime = Date.now() - startTime
+    console.log(`📊 Fetched ${response.data.length} data points in ${fetchTime}ms`)
     
     // Transform to format expected by frontend
-    // Group by timestamp and calculate average level
+    // Group by minute (not by day) for better timeline granularity
     const grouped = {}
     response.data.forEach(point => {
-      const timeKey = new Date(point.timestamp).toLocaleDateString()
+      // Group by minute for timeline
+      const date = new Date(point.timestamp)
+      const timeKey = date.toISOString().slice(0, 16) // YYYY-MM-DDTHH:mm
       if (!grouped[timeKey]) {
-        grouped[timeKey] = { time: timeKey, levels: [] }
+        grouped[timeKey] = { 
+          time: date.toLocaleTimeString(), 
+          timestamp: date.getTime(), // Store timestamp for filtering
+          levels: [], 
+          cauldrons: [] 
+        }
       }
       grouped[timeKey].levels.push(point.level)
+      // Store per-cauldron data for timeline
+      // Use capacity from cauldronsMap if available, otherwise from point or default
+      const capacity = cauldronsMap?.get(point.cauldron_id)?.capacity || 
+                       point.capacity || 
+                       point.max_volume || 
+                       1000
+      grouped[timeKey].cauldrons.push({
+        id: point.cauldron_id,
+        level: Math.round((point.level / capacity) * 100) // Convert to percentage
+      })
     })
     
-    return Object.values(grouped).map(snapshot => ({
-      time: snapshot.time,
-      avgLevel: Math.round(snapshot.levels.reduce((a, b) => a + b, 0) / snapshot.levels.length)
-    }))
+    // Convert to array and sort by timestamp
+    const result = Object.values(grouped)
+      .map(snapshot => ({
+        time: snapshot.time,
+        timestamp: snapshot.timestamp, // Already stored in grouped object
+        avgLevel: Math.round(snapshot.levels.reduce((a, b) => a + b, 0) / snapshot.levels.length),
+        cauldrons: snapshot.cauldrons
+      }))
+      .sort((a, b) => {
+        // Sort by timestamp (more reliable than time string)
+        return (a.timestamp || 0) - (b.timestamp || 0)
+      })
+    
+    console.log(`📊 Transformed to ${result.length} timeline snapshots`)
+    return result
   } catch (error) {
     console.error('Error fetching history:', error)
     // Fallback to mock data

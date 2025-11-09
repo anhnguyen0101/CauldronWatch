@@ -12,15 +12,29 @@ export function initSocket(){
     }
     
     if(msg.type === 'levels'){
-      console.log(`📨 WebSocket: Received ${msg.data.length} cauldron updates`)
+      console.log(`📨 initSocket: Received ${msg.data?.length || 0} cauldron updates`, msg.data)
+      
+      if (!msg.data || !Array.isArray(msg.data) || msg.data.length === 0) {
+        console.warn('⚠️ initSocket: No valid data in levels message', msg)
+        return
+      }
       
       // Use batch update for better performance and reactivity
-      const updateCauldronLevels = usePotionStore.getState().updateCauldronLevels
+      const store = usePotionStore.getState()
+      const updateCauldronLevels = store.updateCauldronLevels
+      
       if (updateCauldronLevels) {
         // Batch update all levels at once
-        updateCauldronLevels(msg.data.map(u => ({ id: u.id, level: u.level })))
-        console.log(`✅ Batch updated ${msg.data.length} cauldron levels`)
+        const updates = msg.data.map(u => ({ id: u.id, level: u.level }))
+        console.log('📨 initSocket: Updating store with', updates)
+        updateCauldronLevels(updates)
+        
+        // Verify the update worked
+        const updatedStore = usePotionStore.getState()
+        console.log(`✅ Batch updated ${msg.data.length} cauldron levels. Store now has ${updatedStore.cauldrons.length} cauldrons`)
+        console.log('📊 Sample cauldron levels:', updatedStore.cauldrons.slice(0, 3).map(c => `${c.id}: ${c.level}%`))
       } else {
+        console.warn('⚠️ initSocket: updateCauldronLevels not available, using fallback')
         // Fallback to individual updates
         msg.data.forEach(u => setCauldronLevel(u.id, u.level))
       }

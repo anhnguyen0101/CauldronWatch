@@ -17,7 +17,6 @@ export default function useInit(){
     // Load initial cauldrons
     fetchCauldrons().then(cauldrons => {
       console.log('📦 Fetched cauldrons from backend:', cauldrons.length)
-      const store = usePotionStore.getState()
       // Transform backend format to frontend format
       // Backend returns: {id, latitude, longitude, max_volume, name}
       const transformed = cauldrons.map(c => {
@@ -34,8 +33,20 @@ export default function useInit(){
       
       console.log('✅ Transformed cauldrons:', transformed.length, transformed[0])
       
+      // Get current store state to check for pending updates
+      const currentStore = usePotionStore.getState()
+      
       // Update store with cauldrons
       usePotionStore.setState({ cauldrons: transformed })
+      
+      // Apply any pending WebSocket updates that arrived before cauldrons were loaded
+      if (currentStore.pendingUpdates && currentStore.pendingUpdates.length > 0) {
+        console.log(`📦 Applying ${currentStore.pendingUpdates.length} pending WebSocket updates`)
+        const updateCauldronLevels = usePotionStore.getState().updateCauldronLevels
+        if (updateCauldronLevels) {
+          updateCauldronLevels(currentStore.pendingUpdates)
+        }
+      }
       
       // Load latest levels
       return fetchLatestLevels()
@@ -67,14 +78,12 @@ export default function useInit(){
       } else {
         console.warn('⚠️  No levels data received from backend')
       }
+      
+      // History loading is now handled by TimelineHeatmap component
+      // It will fetch 7 days of data once and filter client-side
+      console.log('✅ Initial data loaded. Timeline will load history separately.')
     }).catch(err => {
       console.error('❌ Error loading initial data:', err)
-    })
-
-    // Load initial history
-    fetchHistory().then(h=>{
-      const push = usePotionStore.getState().pushHistorySnapshot
-      h.forEach(s=> push(s))
     })
 
     // Initialize WebSocket connection

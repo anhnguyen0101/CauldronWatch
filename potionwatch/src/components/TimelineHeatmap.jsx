@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import usePotionStore from '../store/usePotionStore'
 import { motion } from 'framer-motion'
 import { startSocket } from '../services/websocket'
+import { fetchHistory } from '../services/api'
+import { RefreshCw } from 'lucide-react'
 
 const statusColorMap = {
   normal: 'border-cyan-400 bg-cyan-700',
@@ -23,12 +25,124 @@ export default function TimelineHeatmap({ onCellClick } = {}){
   const [hoveredCell, setHoveredCell] = useState(null)
   const [isLive, setIsLive] = useState(true)
   const [updatedCell, setUpdatedCell] = useState(null)
+  const [timeRange, setTimeRange] = useState('24h') // Default: 24 hours
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  
+  // Store ALL fetched history data (7 days) - fetched once
+  const [allHistoryData, setAllHistoryData] = useState([])
+  const [lastFetchTime, setLastFetchTime] = useState(null)
 
   const [columns, setColumns] = useState(() => (history || []).map(h => ({ time: h.time, cauldrons: h.cauldrons || [] })))
   const columnsMapRef = useRef(new Map())
 
   const timerRef = useRef(null)
   const scrollRef = useRef(null)
+  const hasLoadedRef = useRef(false)
+
+  // Time range options (memoized to prevent unnecessary re-renders)
+  const timeRangeOptions = React.useMemo(() => [
+    { value: '1h', label: 'Last 1 Hour', hours: 1 },
+    { value: '6h', label: 'Last 6 Hours', hours: 6 },
+    { value: '24h', label: 'Last 24 Hours', hours: 24 },
+    { value: '7d', label: 'Last 7 Days', hours: 24 * 7 },
+    { value: '30d', label: 'Last 30 Days', hours: 24 * 30 },
+  ], [])
+
+  // Fetch 7 days of data once on mount (covers all time range options)
+  useEffect(() => {
+    if (hasLoadedRef.current) return
+    
+    async function loadAllHistory() {
+      setIsLoadingHistory(true)
+      const endDate = new Date()
+      // Fetch 7 days to cover all time range options (1h, 6h, 24h, 7d)
+      const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000)
+      
+      // Get cauldrons from store for capacity calculation
+      const store = usePotionStore.getState()
+      const cauldronsMap = new Map(store.cauldrons.map(c => [c.id, c]))
+      
+      console.log('📊 Loading 7 days of timeline data (cached for all ranges)...')
+      try {
+        const h = await fetchHistory(null, startDate.toISOString(), endDate.toISOString(), cauldronsMap)
+        if (h && Array.isArray(h)) {
+          console.log(`📊 Loaded ${h.length} history snapshots (7 days) - ready for client-side filtering`)
+          setAllHistoryData(h)
+          setLastFetchTime(new Date())
+          hasLoadedRef.current = true
+          
+          // Apply default 24h filter initially
+          applyTimeRangeFilter('24h', h)
+        }
+      } catch (err) {
+        console.error('❌ Error loading history:', err)
+      } finally {
+        setIsLoadingHistory(false)
+      }
+    }
+    
+    // Only load if we don't have data yet and cauldrons are loaded
+    const store = usePotionStore.getState()
+    if (store.cauldrons.length > 0) {
+      loadAllHistory()
+    }
+  }, [cauldrons.length]) // Re-run if cauldrons are loaded
+
+  // Helper function to filter history by time range (client-side, no API call)
+  const applyTimeRangeFilter = React.useCallback((rangeValue, dataToFilter) => {
+    const selectedRange = timeRangeOptions.find(opt => opt.value === rangeValue)
+    const data = dataToFilter || allHistoryData
+    if (!selectedRange || !data || data.length === 0) return
+
+    const endTime = Date.now()
+    const startTime = endTime - (selectedRange.hours * 60 * 60 * 1000)
+    
+    // Filter client-side by timestamp (now stored in each snapshot)
+    const filtered = data.filter(snapshot => {
+      const snapshotTime = snapshot.timestamp || 0
+      return snapshotTime >= startTime && snapshotTime <= endTime
+    })
+    
+    console.log(`📊 Filtered to ${filtered.length} snapshots for ${selectedRange.label} (from ${data.length} total)`)
+    
+    // Update store with filtered data
+    const push = usePotionStore.getState().pushHistorySnapshot
+    usePotionStore.setState({ history: [] })
+    filtered.forEach(s => push(s))
+  }, [allHistoryData, timeRangeOptions])
+
+  // Apply filter when time range changes (client-side, no API call)
+  useEffect(() => {
+    if (!hasLoadedRef.current || allHistoryData.length === 0) return
+    
+    applyTimeRangeFilter(timeRange)
+  }, [timeRange, allHistoryData.length, applyTimeRangeFilter]) // Re-filter when range changes or data is loaded
+
+  // Manual refresh function
+  const handleRefresh = async () => {
+    setIsLoadingHistory(true)
+    const endDate = new Date()
+    const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000)
+    
+    const store = usePotionStore.getState()
+    const cauldronsMap = new Map(store.cauldrons.map(c => [c.id, c]))
+    
+    console.log('🔄 Refreshing timeline data (7 days)...')
+    try {
+      const h = await fetchHistory(null, startDate.toISOString(), endDate.toISOString(), cauldronsMap)
+      if (h && Array.isArray(h)) {
+        console.log(`📊 Refreshed ${h.length} history snapshots`)
+        setAllHistoryData(h)
+        setLastFetchTime(new Date())
+        // Re-apply current filter
+        applyTimeRangeFilter(timeRange, h)
+      }
+    } catch (err) {
+      console.error('❌ Error refreshing history:', err)
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
 
   // init from history
   useEffect(()=>{
@@ -282,10 +396,44 @@ export default function TimelineHeatmap({ onCellClick } = {}){
 
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
           <button aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying(p => !p)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{playing ? '⏸' : '▶'}</button>
           <button aria-label={isLive ? 'Pause live' : 'Resume live'} onClick={() => setIsLive(v => !v)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{isLive ? '⏸ Pause Live' : '▶ Resume Live'}</button>
+          
+          {/* Time Range Selector */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-400">Time Range:</label>
+            <select
+              value={timeRange}
+              onChange={(e) => setTimeRange(e.target.value)}
+              disabled={isLoadingHistory}
+              className="px-3 py-1.5 text-sm rounded-md bg-neutral-800/60 border border-neutral-700 text-white hover:bg-neutral-800/80 focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {timeRangeOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {isLoadingHistory && (
+              <span className="text-xs text-gray-400">Loading...</span>
+            )}
+            {lastFetchTime && !isLoadingHistory && (
+              <span className="text-xs text-gray-500">
+                ({allHistoryData.length} snapshots cached)
+              </span>
+            )}
+            <button
+              onClick={handleRefresh}
+              disabled={isLoadingHistory}
+              className="px-2 py-1.5 text-sm rounded-md bg-neutral-800/60 border border-neutral-700 text-white hover:bg-neutral-800/80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              title="Refresh timeline data (7 days)"
+            >
+              <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
+            </button>
+          </div>
+          
           <div className="text-sm text-gray-400">Heatmap (latest on right). Click a cell to apply snapshot.</div>
         </div>
         <div className="text-sm text-neutral-400">Legend: <span className="inline-block w-3 h-3 bg-cyan-500 rounded-full ml-2 mr-1"/>Normal <span className="inline-block w-3 h-3 bg-sky-500 rounded-full ml-2 mr-1"/>Filling <span className="inline-block w-3 h-3 bg-orange-500 rounded-full ml-2 mr-1"/>Draining <span className="inline-block w-3 h-3 bg-red-500 rounded-full ml-2 mr-1"/>Overfill</div>
