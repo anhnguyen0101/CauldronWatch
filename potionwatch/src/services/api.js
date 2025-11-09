@@ -313,3 +313,27 @@ export async function fetchAIFraudAnalysis(startDate = null, endDate = null) {
     }
   }
 }
+
+// Contextual AI explanation for specific components
+export async function fetchAIExplanation(componentName, componentData) {
+  try {
+    const response = await api.post('/api/ai/explain', {
+      component_name: componentName,
+      data: componentData
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching AI explanation:', error)
+    // Return fallback explanation
+    return {
+      main_idea: `This ${componentName} displays important monitoring data for your potion network.`,
+      key_points: [
+        "Data is updated in real-time",
+        "Colors indicate status levels",
+        "Click elements for more details"
+      ],
+      how_to_read: "Review the visual elements and their labels to understand the current state.",
+      what_to_look_for: "Watch for unusual patterns or values that deviate from normal operations."
+    }
+  }
+}

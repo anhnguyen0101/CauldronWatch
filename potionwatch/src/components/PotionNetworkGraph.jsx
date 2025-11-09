@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react'
 import bgDark from '../assets/potion_network_bg_dark.png'
 import bgLight from '../assets/potion_network_bg_light.png'
+import { AIHelpButton } from './AIExplanation'
 
 // Props: data = { nodes: [{id,name,x,y,fillPercent,status,isMarket}], links: [{from,to,travel_time_minutes}] }
 function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' }){
@@ -39,10 +40,10 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     return ()=> ro && ro.disconnect()
   }, [])
 
-  // layout: if nodes provide lat/lng use them with proper geographic bounds, otherwise use x,y or auto-circle
-  const viewW = 800
-  const viewH = 600
-  const margin = 40 // Reduced margin to fill more space
+  // layout: increased viewBox for better space utilization
+  const viewW = 1200
+  const viewH = 800
+  const margin = 60 // Balanced margin
   const centerX = viewW/2
   const centerY = viewH/2
 
@@ -95,7 +96,7 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     
     // Handle case where all points are the same (or very close) - add fixed padding
     const hasRange = latRange > 0.0001 && lngRange > 0.0001
-    const padding = hasRange ? 0.1 : 0.05
+    const padding = hasRange ? 0.15 : 0.1 // Increased padding for better spread
     
     // Use minimum range to ensure visible area even if all points are identical
     const effectiveLatRange = latRange || 0.02 // ~2km at equator
@@ -137,20 +138,24 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     const latRange = bounds.maxLat - bounds.minLat
     const lngRange = bounds.maxLng - bounds.minLng
     
-    // Normalize coordinates to 0-1 range
-    const normalizedX = latRange > 0.001 ? (lng - bounds.minLng) / lngRange : 0.5
+    // Normalize coordinates to 0-1 range (centered)
+    const normalizedX = lngRange > 0.001 ? (lng - bounds.minLng) / lngRange : 0.5
     const normalizedY = latRange > 0.001 ? 1 - ((lat - bounds.minLat) / latRange) : 0.5 // Flip Y axis
     
-    // Scale to viewBox with margin
-    const x = margin + normalizedX * (viewW - 2 * margin)
-    const y = margin + normalizedY * (viewH - 2 * margin)
+    // Scale to viewBox with symmetric margins for better centering
+    const availableWidth = viewW - 2 * margin
+    const availableHeight = viewH - 2 * margin
+    
+    // Center the graph by using the full available space
+    const x = margin + normalizedX * availableWidth
+    const y = margin + normalizedY * availableHeight
     
     return { x, y }
   }, [centerX, centerY, margin, viewW, viewH])
 
-  // Memoize count and layout radius
+  // Memoize count and layout radius - increased for better spread
   const count = useMemo(() => Math.max(1, nodes.length), [nodes.length])
-  const layoutRadius = useMemo(() => Math.max(120, Math.min(viewW, viewH)/2 - 120), [viewW, viewH])
+  const layoutRadius = useMemo(() => Math.max(180, Math.min(viewW, viewH)/2 - 100), [viewW, viewH])
 
   // Memoize auto positions for circular layout
   const autoPositions = useMemo(() => {
@@ -225,7 +230,7 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
       
       // Mixed mode: hasRealCoords but this node doesn't have coordinates
       const nodeIndexInMixed = nodeIndexInMixedMap.get(node.id)
-      const mixedRadius = Math.min(viewW, viewH) * 0.15
+      const mixedRadius = Math.min(viewW, viewH) * 0.2 // Increased from 0.15
       
       if (nodeIndexInMixed != null && nodesWithoutCoords.length > 1) {
         // Space them in a circle around bounds center
@@ -298,8 +303,21 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
 
   return (
     <div ref={ref} className={`card relative overflow-hidden rounded-2xl border border-neutral-700 ${className}`}>
-      <div className="px-4 pt-4 pb-2">
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <h3 className="panel-title">Potion Network</h3>
+        <AIHelpButton 
+          componentName="Potion Network Graph"
+          data={{
+            nodes: propNodes.length,
+            links: propLinks.length,
+            node_types: [...new Set(propNodes.map(n => n.isMarket ? 'market' : 'cauldron'))],
+            sample_nodes: propNodes.slice(0, 3).map(n => ({
+              name: n.name,
+              fillPercent: n.fillPercent || 0,
+              status: n.status || 'normal'
+            }))
+          }}
+        />
       </div>
 
       <div className="w-full h-[520px] relative">

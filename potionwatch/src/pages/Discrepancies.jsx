@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { fetchDiscrepancies, detectDiscrepancies } from '../services/api'
 import { AlertTriangle, AlertCircle, Info, RefreshCw } from 'lucide-react'
+import { AIHelpButton } from '../components/AIExplanation'
 import usePotionStore from '../store/usePotionStore'
 
 export default function Discrepancies(){
@@ -318,7 +319,24 @@ export default function Discrepancies(){
       {/* Discrepancies Table */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="panel-title">Discrepancies</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="panel-title">Discrepancies</h3>
+            <AIHelpButton 
+              componentName="Discrepancies Table"
+              data={{
+                total_discrepancies: allDiscrepancies.length,
+                critical: summary.critical,
+                warning: summary.warning,
+                info: summary.info,
+                time_range: timeRange,
+                sample_discrepancies: filteredDiscrepancies.slice(0, 3).map(d => ({
+                  severity: d.severity,
+                  cauldron_id: d.cauldron_id,
+                  discrepancy_percent: d.discrepancy_percent
+                }))
+              }}
+            />
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-400">
               Showing {filteredDiscrepancies.length} of {allDiscrepancies.length}

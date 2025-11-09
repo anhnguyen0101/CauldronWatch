@@ -36,37 +36,12 @@ export function startSocket(onMessage) {
               console.error('❌ WebSocket: Invalid cauldron_update format - missing data.data.cauldrons', data)
               return
             }
-            
-            // Transform backend format to frontend format
-            // Backend sends: {cauldron_id, level, max_volume, capacity, name}
-            // We calculate percentage here, but initSocket will use store capacity for accuracy
-            const updates = data.data.cauldrons.map(c => {
-              const cauldronId = c.cauldron_id || c.id
-              // Use capacity from WebSocket data (backend enriches it with correct max_volume)
-              const capacity = c.max_volume || c.capacity || 1000
-              
-              // Calculate percentage - ensure it can reach 100%
-              const rawPercentage = (c.level / capacity) * 100
-              // Round to nearest integer, but ensure 100% is possible
-              let percentage = Math.round(rawPercentage)
-              // If very close to 100% (>= 99.5%), round up to 100%
-              if (rawPercentage >= 99.5 && rawPercentage <= 100.5) {
-                percentage = Math.min(100, Math.round(rawPercentage))
-              }
-              // Clamp to 0-100 range
-              percentage = Math.min(100, Math.max(0, percentage))
-              
-              if (process.env.NODE_ENV === 'development' && (percentage >= 95 || rawPercentage >= 99)) {
-                console.log(`📊 WebSocket: ${cauldronId} (${c.name || 'unknown'}): ${c.level}L / ${capacity}L = ${rawPercentage.toFixed(2)}% → ${percentage}%`)
-              }
-              
-              return {
-                id: cauldronId,
-                level: percentage,
-                rawLevel: c.level,
-                capacity: capacity
-              }
-            })
+            const updates = data.data.cauldrons.map(c => ({
+              id: c.cauldron_id || c.id,
+              level: Math.round((c.level / (c.capacity || c.max_volume || 1000)) * 100), // Convert to percentage
+              rawLevel: c.level,
+              capacity: c.capacity || c.max_volume || 1000
+            }))
             console.log('📨 WebSocket: Transformed updates', updates)
             onMessage({ type: 'levels', data: updates })
           } else if (data.type === 'drain_event') {

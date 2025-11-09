@@ -6,7 +6,7 @@ import AlertsPanel from '../components/AlertsPanel'
 import MetricsCards from '../components/MetricsCards'
 import TicketsTable from '../components/TicketsTable'
 import TimelineHeatmap from '../components/TimelineHeatmap'
-import AISummary from '../components/AISummary'
+import { AIHelpButton } from '../components/AIExplanation'
 import usePotionStore from '../store/usePotionStore'
 
 export default function Overview(){
@@ -126,11 +126,6 @@ export default function Overview(){
   return (
     <div className="space-y-6">
       <MetricsCards stats={stats} />
-
-      {/* AI Summary - Show prominently */}
-      <motion.div initial={{opacity:0, y:8}} animate={{opacity:1, y:0}} transition={{duration:0.3}}>
-        <AISummary />
-      </motion.div>
 
       {/* Show loading message if no cauldrons loaded yet */}
       {cauldrons.length === 0 ? (

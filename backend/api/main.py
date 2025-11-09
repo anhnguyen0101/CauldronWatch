@@ -16,6 +16,7 @@ from backend.api.reconcile_service import reconcile_from_live
 from backend.api.cached_eog_client import CachedEOGClient
 from backend.api.websocket import ws_manager
 from backend.api.forecast_service import ForecastService
+from backend.api.ai_insights import AIInsights
 from backend.database.db import init_db, get_db
 from backend.models.schemas import (
     CauldronDto,
@@ -979,7 +980,16 @@ async def get_discrepancies(
     
     last = _get_last_discrepancies(start_dt, end_dt)
     if not last:
-        raise HTTPException(status_code=404, detail=f"No discrepancies cached for date range {start_date} to {end_date}. Run POST /api/discrepancies/detect first.")
+        # Auto-detect if no cache exists (convenience feature)
+        print(f"⚠️  No cache for date range {start_date} to {end_date}, auto-detecting...")
+        try:
+            # Call detect internally and get results
+            result = await detect_discrepancies(start_date=start_date, end_date=end_date, db=db, use_cache=True)
+            # Use the detected result as if it came from cache (will apply filters below)
+            last = result
+        except Exception as e:
+            # If detection fails, return 404
+            raise HTTPException(status_code=404, detail=f"No discrepancies cached for date range {start_date} to {end_date} and detection failed: {str(e)}")
 
     if severity and severity not in {"critical", "warning", "info"}:
         raise HTTPException(status_code=400, detail="Invalid severity. Use one of: critical, warning, info.")
@@ -1376,6 +1386,258 @@ async def periodic_update():
         except Exception as e:
             print(f"❌ Fatal error in background updater: {e}")
             await asyncio.sleep(60)  # Wait before retrying
+
+
+# ==================== AI-Powered Insights Endpoints ====================
+
+# Initialize AI insights generator
+ai_insights = AIInsights()
+
+@app.get("/api/ai/summary")
+async def get_ai_summary(
+    time_range: str = "24 hours",
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Generate AI-powered executive summary of system status
+    
+    Analyzes discrepancies, cauldron status, and alerts to provide
+    natural language insights and recommendations.
+    """
+    try:
+        client = CachedEOGClient(db)
+        
+        # Fetch recent discrepancies (last 24 hours by default)
+        from datetime import timedelta
+        end_date = datetime.now()
+        start_date = end_date - timedelta(hours=24)
+        
+        # Get discrepancies
+        tickets_dto = client.get_tickets(use_cache=use_cache)
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(start=start_date, end=end_date, use_cache=use_cache)
+        
+        drains = []
+        for _, ca in analyses.items():
+            drains.extend(ca.drain_events)
+        
+        discrepancies_result = reconcile_from_live(tickets_dto, drains)
+        discrepancies = [d.model_dump() for d in discrepancies_result.discrepancies]
+        
+        # Get cauldron statuses
+        cauldrons = client.get_cauldrons(use_cache=use_cache)
+        cauldrons_data = [c.model_dump() for c in cauldrons]
+        
+        # Get latest levels for cauldron percentages
+        latest_levels = client.get_latest_levels(use_cache=use_cache)
+        cauldron_map = {c.id: c for c in cauldrons}
+        for level_data in latest_levels:
+            cauldron = cauldron_map.get(level_data.cauldron_id)
+            if cauldron:
+                for c in cauldrons_data:
+                    if c['id'] == cauldron.id:
+                        c['level'] = round((level_data.level / cauldron.max_volume) * 100, 1)
+                        break
+        
+        # Get recent alerts (mock for now - could fetch from store)
+        recent_alerts = []
+        
+        # Generate AI summary
+        summary = await ai_insights.generate_executive_summary(
+            discrepancies=discrepancies,
+            cauldrons=cauldrons_data,
+            recent_alerts=recent_alerts,
+            time_range=time_range
+        )
+        
+        return summary
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error generating AI summary: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/optimization-plan")
+async def get_ai_optimization_plan(
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Generate AI-powered optimization plan for witch allocation
+    
+    Analyzes current operations and provides recommendations for
+    reducing witch count while maintaining coverage.
+    """
+    try:
+        client = CachedEOGClient(db, cache_ttl_minutes=30)
+        
+        # Get current forecast to determine minimum witches
+        cauldrons = client.get_cauldrons(use_cache=True)
+        couriers = client.get_couriers(use_cache=True)
+        network = client.get_network(use_cache=True)
+        market = client.get_market(use_cache=True)
+        
+        latest_data = client.get_latest_levels(use_cache=True)
+        latest_levels = {}
+        for point in latest_data:
+            cauldron_id = point.cauldron_id
+            if cauldron_id:
+                if cauldron_id not in latest_levels:
+                    latest_levels[cauldron_id] = point.level
+        
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(use_cache=True)
+        analyses_dict = {cauldron_id: analysis for cauldron_id, analysis in analyses.items()}
+        
+        forecast_service = ForecastService(
+            cauldrons=cauldrons,
+            couriers=couriers,
+            network=network,
+            market=market,
+            analyses=analyses_dict,
+            latest_levels=latest_levels
+        )
+        
+        forecast_result = forecast_service.calculate_minimum_witches(
+            safety_margin_percent=0.9,
+            unload_time_minutes=15.0
+        )
+        
+        current_witches = len(couriers)  # Assume all couriers are active
+        
+        # Prepare cauldron data with fill rates
+        cauldrons_data = []
+        for c in cauldrons:
+            analysis = analyses_dict.get(c.id)
+            fill_rate = analysis.fill_rate if analysis else 0.0
+            level = latest_levels.get(c.id, 0)
+            percentage = round((level / c.max_volume) * 100, 1) if c.max_volume > 0 else 0
+            
+            cauldrons_data.append({
+                'id': c.id,
+                'name': c.name,
+                'fill_rate': fill_rate,
+                'level': percentage,
+                'capacity': c.max_volume
+            })
+        
+        network_data = network.model_dump() if hasattr(network, 'model_dump') else {
+            'edges': [e.model_dump() if hasattr(e, 'model_dump') else e for e in network.edges]
+        }
+        
+        # Generate optimization plan
+        plan = await ai_insights.generate_optimization_plan(
+            current_witches=current_witches,
+            cauldrons=cauldrons_data,
+            network=network_data,
+            forecast_result=forecast_result
+        )
+        
+        return plan
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error generating optimization plan: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/fraud-analysis")
+async def get_ai_fraud_analysis(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    use_cache: bool = True
+):
+    """
+    Generate AI-powered fraud risk analysis
+    
+    Analyzes discrepancies and tickets to identify suspicious patterns
+    and prioritize investigations.
+    """
+    try:
+        from datetime import datetime as dt
+        
+        # Parse date range
+        start_dt = dt.strptime(start_date, "%Y-%m-%d") if start_date else None
+        end_dt = dt.strptime(end_date, "%Y-%m-%d") if end_date else None
+        
+        client = CachedEOGClient(db)
+        
+        # Get tickets
+        tickets_dto = client.get_tickets(use_cache=use_cache)
+        tickets_data = [t.model_dump() for t in tickets_dto.transport_tickets]
+        
+        # Get discrepancies
+        service = AnalysisService(db)
+        analyses = service.analyze_all_cauldrons(
+            start=start_dt,
+            end=end_dt,
+            use_cache=use_cache
+        )
+        
+        drains = []
+        for _, ca in analyses.items():
+            drains.extend(ca.drain_events)
+        
+        discrepancies_result = reconcile_from_live(tickets_dto, drains)
+        discrepancies = [d.model_dump() for d in discrepancies_result.discrepancies]
+        
+        # Get couriers
+        couriers = client.get_couriers(use_cache=use_cache)
+        couriers_data = [c.model_dump() for c in couriers]
+        
+        # Generate fraud analysis
+        analysis = await ai_insights.generate_fraud_analysis(
+            discrepancies=discrepancies,
+            tickets=tickets_data,
+            couriers=couriers_data
+        )
+        
+        return analysis
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error generating fraud analysis: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ai/explain")
+async def explain_component(
+    request: Dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate contextual AI explanation for a specific component
+    
+    Provides explanation of what a graph/chart/table is showing and how to interpret it.
+    """
+    try:
+        from pydantic import BaseModel
+        
+        class ExplainRequest(BaseModel):
+            component_name: str
+            data: Dict
+        
+        req = ExplainRequest(**request)
+        
+        # Generate explanation using AI
+        explanation = await ai_insights.explain_component(
+            component_name=req.component_name,
+            component_data=req.data
+        )
+        
+        return explanation
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error generating component explanation: {error_detail}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

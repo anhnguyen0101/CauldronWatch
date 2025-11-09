@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import usePotionStore from '../store/usePotionStore'
+import { AIHelpButton } from './AIExplanation'
 import { motion } from 'framer-motion'
 import { startSocket } from '../services/websocket'
 import { fetchHistory } from '../services/api'
@@ -215,6 +216,15 @@ export default function TimelineHeatmap({ onCellClick } = {}){
     <div className="w-full">
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div className="flex items-center gap-3 flex-wrap">
+          <AIHelpButton 
+            componentName="Timeline Heatmap"
+            data={{
+              snapshots: history?.length || 0,
+              cauldrons: columns.length > 0 ? columns[0]?.cauldrons?.length || 0 : 0,
+              time_range: timeRange,
+              is_live: isLive
+            }}
+          />
           <button aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying(p => !p)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{playing ? '⏸' : '▶'}</button>
           <button aria-label={isLive ? 'Pause live' : 'Resume live'} onClick={() => setIsLive(v => !v)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{isLive ? '⏸ Pause Live' : '▶ Resume Live'}</button>
           
