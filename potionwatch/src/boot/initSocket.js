@@ -37,6 +37,18 @@ export function initSocket(){
         console.log('📨 initSocket: Updating store with', updates.length, 'cauldron updates')
         updateCauldronLevels(updates)
         
+        // Calculate average from converted percentages (not liters!)
+        const avg = Math.round(updates.reduce((a,d)=>a+d.level,0)/updates.length)
+        console.log(`📊 WebSocket: New average level = ${avg}%`)
+        
+        // Push history snapshot using converted percentages
+        pushHistorySnapshot({ 
+          time: new Date().toLocaleTimeString(), 
+          avgLevel: avg,
+          timestamp: new Date().toISOString(),
+          cauldrons: updates.map(u => ({ id: u.id, level: u.level }))
+        })
+        
         // Verify the update worked
         const updatedStore = usePotionStore.getState()
         console.log(`✅ Batch updated ${msg.data.length} cauldron levels. Store now has ${updatedStore.cauldrons.length} cauldrons`)
@@ -46,19 +58,6 @@ export function initSocket(){
         // Fallback to individual updates
         msg.data.forEach(u => setCauldronLevel(u.id, u.level))
       }
-      
-      // Calculate and log average
-      const avg = Math.round(msg.data.reduce((a,d)=>a+d.level,0)/msg.data.length)
-      console.log(`📊 WebSocket: New average level = ${avg}%`)
-      
-      // Push history snapshot
-      const currentHistory = usePotionStore.getState().history || []
-      pushHistorySnapshot({ 
-        time: new Date().toLocaleTimeString(), 
-        avgLevel: avg,
-        timestamp: new Date().toISOString(),
-        cauldrons: msg.data.map(u => ({ id: u.id, level: u.level }))
-      })
 
       // Alert rules: check for various conditions
       // Get cauldron names from store for better alert messages
