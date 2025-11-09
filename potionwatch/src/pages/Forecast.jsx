@@ -29,6 +29,7 @@ export default function Forecast() {
   const [minimumWitches, setMinimumWitches] = useState(null);
   const [dailySchedule, setDailySchedule] = useState(null);
   const [loadingForecast, setLoadingForecast] = useState(false);
+  const [mode, setMode] = useState("today");
   
   // Listen to real-time cauldron level updates
   const lastUpdate = usePotionStore((state) => state.lastUpdate);
