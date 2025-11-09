@@ -30,14 +30,34 @@ export function startSocket(onMessage) {
           const data = JSON.parse(event.data)
           
           if (data.type === 'cauldron_update') {
-            console.log('📨 WebSocket: Cauldron update received')
+            console.log('📨 WebSocket: Cauldron update received', data.data)
+            
+            if (!data.data || !data.data.cauldrons || !Array.isArray(data.data.cauldrons)) {
+              console.error('⚠️  Invalid cauldron_update message format:', data)
+              return
+            }
+            
             // Transform backend format to frontend format
-            const updates = data.data.cauldrons.map(c => ({
-              id: c.cauldron_id || c.id,
-              level: Math.round((c.level / (c.capacity || c.max_volume || 1000)) * 100), // Convert to percentage
-              rawLevel: c.level,
-              capacity: c.capacity || c.max_volume || 1000
-            }))
+            const updates = data.data.cauldrons.map((c, index) => {
+              const cauldronId = c.cauldron_id || c.id
+              const level = c.level || 0
+              const capacity = c.capacity || c.max_volume || 1000
+              const percentage = capacity > 0 ? Math.round((level / capacity) * 100) : 0
+              
+              // Log first few updates for debugging
+              if (index < 2) {
+                console.log(`   📊 WebSocket update: ${cauldronId} = ${level}L / ${capacity}L = ${percentage}%`)
+              }
+              
+              return {
+                id: cauldronId,
+                level: percentage,
+                rawLevel: level,
+                capacity: capacity
+              }
+            })
+            
+            console.log(`📨 Processed ${updates.length} cauldron updates from WebSocket`)
             onMessage({ type: 'levels', data: updates })
           } else if (data.type === 'drain_event') {
             console.log('💧 WebSocket: Drain event received', data.data)
@@ -62,6 +82,13 @@ export function startSocket(onMessage) {
 
       ws.onerror = (error) => {
         console.error('❌ WebSocket error:', error)
+        console.error('❌ WebSocket error details:', {
+          type: error.type,
+          target: error.target,
+          readyState: ws.readyState, // 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED
+          url: wsUrl
+        })
+        // Don't close immediately - let onclose handle it
       }
 
       ws.onclose = () => {
