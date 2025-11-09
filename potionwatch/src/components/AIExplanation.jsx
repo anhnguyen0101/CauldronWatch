@@ -155,7 +155,7 @@ export default function AIExplanation({
 }
 
 // Helper component for the question mark icon button
-export function AIHelpButton({ componentName, data, className = "" }) {
+export function AIHelpButton({ componentName, data, className = "", iconSize = "w-4 h-4" }) {
   const [isOpen, setIsOpen] = useState(false)
 
   return (
@@ -166,7 +166,7 @@ export function AIHelpButton({ componentName, data, className = "" }) {
         title="Get AI explanation"
         aria-label="Get AI explanation"
       >
-        <HelpCircle className="w-4 h-4" />
+        <HelpCircle className={iconSize} />
       </button>
       <AIExplanation
         componentName={componentName}

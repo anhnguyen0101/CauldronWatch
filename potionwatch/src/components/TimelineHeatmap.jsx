@@ -273,8 +273,9 @@ export default function TimelineHeatmap({ onCellClick } = {}){
               time_range: timeRange,
               is_live: isLive
             }}
+            className="p-2.5"
+            iconSize="w-5 h-5"
           />
-          <button aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying(p => !p)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{playing ? '⏸' : '▶'}</button>
           <button aria-label={isLive ? 'Pause live' : 'Resume live'} onClick={() => setIsLive(v => !v)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{isLive ? '⏸ Pause Live' : '▶ Resume Live'}</button>
           
           {/* Time Range Selector */}
@@ -320,7 +321,7 @@ export default function TimelineHeatmap({ onCellClick } = {}){
         <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
           <div className="inline-flex space-x-2 p-2" style={{ minWidth: 'min-content' }}>
            
-            {allColumns.map((column, colIndex) => {
+            {columns.map((column, colIndex) => {
               const isLiveCol = column.isLive === true
               
               return (
