@@ -50,6 +50,21 @@ CREATE TABLE IF NOT EXISTS market (
     last_updated DATETIME
 );
 
+-- Network edges table
+CREATE TABLE IF NOT EXISTS network_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_node VARCHAR NOT NULL,
+    to_node VARCHAR NOT NULL,
+    travel_time_minutes FLOAT,
+    weight FLOAT,
+    distance FLOAT,
+    last_updated DATETIME
+);
+
+-- Indexes for network_edges
+CREATE INDEX IF NOT EXISTS idx_network_edges_from_node ON network_edges(from_node);
+CREATE INDEX IF NOT EXISTS idx_network_edges_to_node ON network_edges(to_node);
+
 -- Couriers table
 CREATE TABLE IF NOT EXISTS couriers (
     courier_id VARCHAR NOT NULL PRIMARY KEY,

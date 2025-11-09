@@ -153,11 +153,11 @@ async def get_couriers(db: Session = Depends(get_db), use_cache: bool = True):
 
 
 @app.get("/api/network", response_model=NetworkDto)
-async def get_network(db: Session = Depends(get_db)):
+async def get_network(db: Session = Depends(get_db), use_cache: bool = True):
     """Get network graph information"""
     try:
         client = CachedEOGClient(db)
-        return client.get_network()
+        return client.get_network(use_cache=use_cache)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -191,7 +191,7 @@ async def get_combined_graph(db: Session = Depends(get_db), use_cache: bool = Tr
         client = CachedEOGClient(db)
         
         # Fetch all components
-        network = client.get_network()
+        network = client.get_network(use_cache=use_cache)
         cauldrons = client.get_cauldrons(use_cache=use_cache)
         market = client.get_market(use_cache=use_cache)
         
