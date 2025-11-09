@@ -29,29 +29,45 @@ export default function Sidebar() {
   }, [theme])
 
   return (
-    <aside className={`relative bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}>
-      <div className="p-4 flex items-start justify-between">
-        <button
-          aria-label={collapsed ? 'Open sidebar' : 'Collapse sidebar'}
-          onClick={() => setCollapsed(s => !s)}
-          className="p-2 rounded-md hover:bg-neutral-800/40 text-black dark:text-gray-300"
-        >
-          {collapsed ? (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
-              <path d="M3 12h18" />
-              <path d="M3 6h18" opacity="0.6" />
-              <path d="M3 18h18" opacity="0.6" />
-            </svg>
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
-              <path d="M6 6l12 12" />
-              <path d="M18 6L6 18" />
-            </svg>
-          )}
-        </button>
+    <aside className={`relative flex flex-col bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}>
+      {/* Logo and Name Section */}
+      <div className="p-4 flex items-center justify-between border-b border-neutral-300 dark:border-neutral-800">
+        {!collapsed ? (
+          <>
+            <div className="flex items-center gap-3 flex-1">
+              <img src={logo} alt="CauldronWatch logo" className="w-16 h-16 object-contain rounded-md" />
+              <div className="text-xl font-bold text-black dark:text-gray-200">CauldronWatch</div>
+            </div>
+            <button
+              aria-label="Collapse sidebar"
+              onClick={() => setCollapsed(s => !s)}
+              className="p-2 rounded-md hover:bg-neutral-800/40 text-black dark:text-gray-300"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </svg>
+            </button>
+          </>
+        ) : (
+          <div className="flex flex-col items-center w-full gap-2">
+            <img src={logo} alt="CauldronWatch logo" className="w-12 h-12 object-contain rounded-md" />
+            <button
+              aria-label="Open sidebar"
+              onClick={() => setCollapsed(s => !s)}
+              className="p-2 rounded-md hover:bg-neutral-800/40 text-black dark:text-gray-300"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
+                <path d="M3 12h18" />
+                <path d="M3 6h18" opacity="0.6" />
+                <path d="M3 18h18" opacity="0.6" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* hide navigation when collapsed so nothing appears under the hamburger */}
+      {/* Navigation */}
       {!collapsed && (
         <nav className="px-2 pt-2 space-y-2 flex-1">
           {links.map(l => (
