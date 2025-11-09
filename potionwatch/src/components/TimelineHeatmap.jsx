@@ -299,8 +299,16 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
 
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <div className="text-sm font-semibold text-text-light dark:text-gray-400">Time Line Series Heat Map</div>
+          {isLive && (
+            <span className="text-xs text-accent font-medium">● LIVE</span>
+          )}
+        </div>
+        
         <div className="flex items-center gap-3 flex-wrap">
+<<<<<<< Updated upstream
           <button
             aria-label={playing ? 'Pause' : 'Play'}
             onClick={() => setPlaying(p => !p)}
@@ -317,6 +325,8 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
             {isLive ? '⏸ Pause Live' : '▶ Resume Live'}
           </button>
           
+=======
+>>>>>>> Stashed changes
           {/* Time Range Selector */}
           <div className="flex items-center gap-2">
             <label className="text-sm text-text-light dark:text-gray-400">Time Range:</label>
@@ -324,7 +334,11 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value)}
               disabled={isLoadingHistory}
+<<<<<<< Updated upstream
               className="px-3 py-1.5 text-sm rounded-md bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50 disabled:cursor-not-allowed"
+=======
+              className="px-3 py-1.5 text-sm rounded-md bg-panel-light dark:bg-neutral-800/60 border border-border-light dark:border-neutral-700 text-text-light dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-800/80 focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+>>>>>>> Stashed changes
             >
               {timeRangeOptions.map(option => (
                 <option key={option.value} value={option.value}>
@@ -342,6 +356,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                 (Updated {lastFetchTime.toLocaleTimeString()})
               </span>
             )}
+<<<<<<< Updated upstream
             
             <button
               onClick={handleRefresh}
@@ -351,15 +366,57 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
             >
               <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
             </button>
+=======
+>>>>>>> Stashed changes
           </div>
-          
 
-          <div className="text-sm text-text-light dark:text-gray-400">Heatmap (latest on right). Click a cell to apply snapshot.</div>
+          {/* Timeline Playback Button - Distinct styling */}
+          <button
+            aria-label={playing ? 'Pause timeline playback' : 'Play timeline playback'}
+            onClick={() => setPlaying(p => !p)}
+            className="px-3 py-1.5 text-sm rounded-md bg-panel-light dark:bg-neutral-800/60 border border-border-light dark:border-neutral-700 text-text-light dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-800/80 flex items-center gap-2 transition-colors"
+            title={playing ? 'Pause timeline playback' : 'Play timeline playback'}
+          >
+            {playing ? '⏸' : '▶'}
+            <span className="text-xs">Timeline</span>
+          </button>
+          
+          {/* Live Updates Toggle - Distinct styling */}
+          <button
+            aria-label={isLive ? 'Pause live updates' : 'Resume live updates'}
+            onClick={() => setIsLive(v => !v)}
+            className={`px-3 py-1.5 text-sm rounded-md border flex items-center gap-2 transition-colors ${
+              isLive 
+                ? 'bg-panel-light dark:bg-neutral-800/60 border-accent/50 dark:border-accent/30 hover:bg-gray-100 dark:hover:bg-neutral-800/80 text-text-light dark:text-gray-200 ring-1 ring-accent/20 dark:ring-accent/10' 
+                : 'bg-panel-light dark:bg-neutral-800/40 border-border-light dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-800/60 text-text-light/70 dark:text-gray-400'
+            }`}
+            title={isLive ? 'Pause live updates (stops real-time data)' : 'Resume live updates (enables real-time data)'}
+          >
+            {isLive ? '⏸' : '▶'}
+            <span className="text-xs">{isLive ? 'Pause Live' : 'Resume Live'}</span>
+          </button>
+          
+          {/* Refresh Button */}
+          <button
+            onClick={handleRefresh}
+            disabled={isLoadingHistory}
+            className="px-2 py-1.5 text-sm rounded-md bg-panel-light dark:bg-neutral-800/60 border border-border-light dark:border-neutral-700 text-text-light dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-800/80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+            title="Refresh timeline data"
+          >
+            <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
+          </button>
         </div>
       </div>
 
+<<<<<<< Updated upstream
       <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark" style={{ height: 'auto' }}>
         <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
+=======
+      <div className="text-xs text-text-light/70 dark:text-gray-400 mb-2">Heatmap (latest on right). Click a cell to apply snapshot.</div>
+
+      <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-panel-light dark:bg-neutral-900 border border-border-light dark:border-neutral-700" style={{ height: 'auto' }}>
+        <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
+>>>>>>> Stashed changes
           <div className="inline-flex space-x-2 p-2" style={{ minWidth: 'min-content' }}>
            
             {allColumns.map((column, colIndex) => {

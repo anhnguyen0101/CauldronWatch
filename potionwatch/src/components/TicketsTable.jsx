@@ -48,9 +48,8 @@ export default function TicketsTable() {
   }, [])
 
   return (
-    <div className="card">
-      <h3 className="panel-title mb-3">Tickets vs Drains</h3>
-
+    <div className="card flex flex-col h-full min-h-0">
+      <h3 className="panel-title mb-3 flex-shrink-0">Tickets vs Drains</h3>
 
       {loading ? (
         <div className="text-text-light/70 dark:text-text-dark/70 text-sm py-4">Loading...</div>
@@ -109,6 +108,6 @@ export default function TicketsTable() {
           </div>
         </div>
       )}
-      </div>
+    </div>
   )
 }

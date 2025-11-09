@@ -102,30 +102,57 @@ export default function Overview(){
           </div>
         </div>
       ) : (
-        <>
+        <div>
           {/* Two-column responsive grid: Map | Alerts + Tickets */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <motion.div initial={{opacity:0, y:8}} animate={{opacity:1, y:0}} transition={{duration:0.35}} className="lg:col-span-2">
-              <PotionNetworkGraph data={dataProp} />
+            {/* Left: Potion Network - Fixed height */}
+            <motion.div 
+              initial={{opacity:0, y:8}} 
+              animate={{opacity:1, y:0}} 
+              transition={{duration:0.35}} 
+              className="lg:col-span-2"
+              style={{ height: '600px' }}
+            >
+              <div className="h-full">
+                <PotionNetworkGraph data={dataProp} />
+              </div>
             </motion.div>
 
-            <motion.div initial={{opacity:0, y:8}} animate={{opacity:1, y:0}} transition={{duration:0.35, delay:0.05}} className="flex flex-col gap-4">
-              <AlertsPanel />
-              <TicketsTable />
+            {/* Right: Alerts + Tickets - Same fixed height */}
+            <motion.div 
+              initial={{opacity:0, y:8}} 
+              animate={{opacity:1, y:0}} 
+              transition={{duration:0.35, delay:0.05}} 
+              className="flex flex-col gap-4"
+              style={{ height: '600px' }}
+            >
+              {/* Alerts Panel - Fixed height */}
+              <div className="flex-shrink-0" style={{ height: '240px' }}>
+                <AlertsPanel />
+              </div>
+              
+              {/* Tickets Table - Takes remaining space */}
+              <div className="flex-1 min-h-0">
+                <TicketsTable />
+              </div>
             </motion.div>
           </div>
-
-          {/* Timeline bar full width */}
-          <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{duration:0.4}} className="min-w-0 w-full">
-            <div className="card min-w-0 w-full">
-              <div className="mb-2 text-sm text-text-light dark:text-gray-400">Timeline</div>
-              <div className="min-w-0 w-full">
-                <TimelineHeatmap />
-              </div>
-            </div>
-          </motion.div>
-        </>
+        </div>
       )}
+
+      {/* Timeline bar full width - Separate from grid for proper spacing */}
+      <motion.div 
+        initial={{opacity:0}} 
+        animate={{opacity:1}} 
+        transition={{duration:0.4}} 
+        className="min-w-0 w-full mt-6"
+      >
+        <div className="card min-w-0 w-full">
+          <div className="min-w-0 w-full">
+            <TimelineHeatmap />
+          </div>
+        </div>
+      </motion.div>
     </div>
   )
 }

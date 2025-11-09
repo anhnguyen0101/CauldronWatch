@@ -45,6 +45,7 @@ export default function AlertsPanel() {
                     {a.message}
                   </div>
                 </div>
+                <div className="text-xs text-text-light dark:text-neutral-400 flex-shrink-0 ml-2 whitespace-nowrap">{a.time || new Date().toLocaleTimeString()}</div>
               </div>
 
               <div className="text-sm text-text-light dark:text-neutral-400 whitespace-nowrap">
@@ -53,7 +54,7 @@ export default function AlertsPanel() {
             </div>
           ))}
         </div>
-      </div>
-    </aside>
+      )}
+    </div>
   )
 }
