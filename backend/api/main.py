@@ -889,6 +889,22 @@ async def detect_discrepancies(
             drains.extend(ca.drain_events)
 
         result = reconcile_from_live(tickets_dto, drains)
+        
+        # If start_date == end_date, filter discrepancies to exact date only
+        if start_dt and end_dt and start_dt.date() == end_dt.date():
+            exact_date = start_dt.date()
+            before_count = len(result.discrepancies)
+            result.discrepancies = [
+                d for d in result.discrepancies
+                if d.date and datetime.strptime(d.date, "%Y-%m-%d").date() == exact_date
+            ]
+            # Recalculate counts after filtering
+            result.total_discrepancies = len(result.discrepancies)
+            result.critical_count = sum(1 for d in result.discrepancies if d.severity == "critical")
+            result.warning_count = sum(1 for d in result.discrepancies if d.severity == "warning")
+            result.info_count = sum(1 for d in result.discrepancies if d.severity == "info")
+            print(f"   Filtered to exact date {exact_date}: {before_count} -> {result.total_discrepancies} discrepancies")
+        
         _set_last_discrepancies(result, start_dt, end_dt)
         print(f"✅ Detection complete: {result.total_discrepancies} discrepancies found")
         return result
