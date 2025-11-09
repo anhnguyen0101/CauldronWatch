@@ -72,7 +72,7 @@ export function startSocket(onMessage) {
         if (reconnectAttempts < maxReconnectAttempts) {
           reconnectAttempts++
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000) // Exponential backoff, max 30s
-          console.log(`🔄 Reconnecting in ${delay/1000}s... (attempt ${reconnectAttempts}/${https://github.com/anhnguyen0101/CauldronWatch/pull/2/conflict?name=potionwatch%252Fsrc%252Fservices%252Fwebsocket.js&ancestor_oid=f6907813d5b609482e96d4573b7f90d9520456b6&base_oid=5989c6f4b9fbc2ed41510a076a1fb9630cabddb7&head_oid=3824567e2f8e7b2ecc688a7cb0c8c8fe1c3ddfedmaxReconnectAttempts})`)
+          console.log(`🔄 Reconnecting in ${delay/1000}s... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`)
           reconnectTimeout = setTimeout(connect, delay)
         } else {
           console.error('❌ Max reconnection attempts reached. Backend is not available.')
