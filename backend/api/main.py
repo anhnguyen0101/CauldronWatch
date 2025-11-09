@@ -40,16 +40,69 @@ import os
 
 
 _DISCREP_CACHE_LOCK = Lock()
-_DISCREP_CACHE: Optional[DiscrepanciesDto] = None
+_DISCREP_CACHE: Dict[str, tuple] = {}  # cache_key -> (result, timestamp)
+_CACHE_EXPIRY_SECONDS = 300  # 5 minutes cache
+_FORECAST_CACHE_LOCK = Lock()
+_FORECAST_CACHE: Dict[str, tuple] = {}  # cache_key -> (result, timestamp)
+_FORECAST_EXPIRY_SECONDS = 180  # 3 minutes cache (forecast changes less frequently)
 _LAST_DRAIN_EVENTS_LOCK = Lock()
 _LAST_DRAIN_EVENTS: Dict[str, List[str]] = {}  # cauldron_id -> list of drain event IDs
 _LAST_DISCREPANCY_IDS_LOCK = Lock()
 _LAST_DISCREPANCY_IDS: set = set()  # Set of (ticket_id, cauldron_id) tuples
 
-def _set_last_discrepancies(res: DiscrepanciesDto) -> None:
+def _get_cache_key(start_date: Optional[datetime], end_date: Optional[datetime]) -> str:
+    """Generate cache key from date range"""
+    start_str = start_date.date().isoformat() if start_date else "None"
+    end_str = end_date.date().isoformat() if end_date else "None"
+    return f"{start_str}:{end_str}"
+
+def _set_last_discrepancies(res: DiscrepanciesDto, start_date: Optional[datetime], end_date: Optional[datetime]) -> None:
+    """Cache discrepancy results with timestamp"""
     global _DISCREP_CACHE
+    cache_key = _get_cache_key(start_date, end_date)
     with _DISCREP_CACHE_LOCK:
-        _DISCREP_CACHE = res
+        _DISCREP_CACHE[cache_key] = (res, datetime.now())
+        print(f"📦 Cached discrepancies for key: {cache_key}")
+
+def _get_last_discrepancies(start_date: Optional[datetime], end_date: Optional[datetime]) -> Optional[DiscrepanciesDto]:
+    """Get cached discrepancy results if not expired"""
+    cache_key = _get_cache_key(start_date, end_date)
+    with _DISCREP_CACHE_LOCK:
+        if cache_key in _DISCREP_CACHE:
+            result, timestamp = _DISCREP_CACHE[cache_key]
+            age_seconds = (datetime.now() - timestamp).total_seconds()
+            if age_seconds < _CACHE_EXPIRY_SECONDS:
+                print(f"✅ Using cached discrepancies for {cache_key} (age: {int(age_seconds)}s)")
+                return result
+            else:
+                print(f"⏰ Cache expired for {cache_key} (age: {int(age_seconds)}s)")
+                del _DISCREP_CACHE[cache_key]
+        return None
+
+def _get_forecast_cache_key(safety_margin: float, unload_time: float) -> str:
+    """Generate cache key for forecast results"""
+    return f"forecast:{safety_margin:.2f}:{unload_time:.1f}"
+
+def _set_forecast_cache(key: str, result: Dict) -> None:
+    """Cache forecast results with timestamp"""
+    global _FORECAST_CACHE
+    with _FORECAST_CACHE_LOCK:
+        _FORECAST_CACHE[key] = (result, datetime.now())
+        print(f"📦 Cached forecast for key: {key}")
+
+def _get_forecast_cache(key: str) -> Optional[Dict]:
+    """Get cached forecast results if not expired"""
+    with _FORECAST_CACHE_LOCK:
+        if key in _FORECAST_CACHE:
+            result, timestamp = _FORECAST_CACHE[key]
+            age_seconds = (datetime.now() - timestamp).total_seconds()
+            if age_seconds < _FORECAST_EXPIRY_SECONDS:
+                print(f"✅ Using cached forecast for {key} (age: {int(age_seconds)}s)")
+                return result
+            else:
+                print(f"⏰ Forecast cache expired for {key} (age: {int(age_seconds)}s)")
+                del _FORECAST_CACHE[key]
+        return None
 
 
 def check_and_populate_database():
@@ -149,10 +202,6 @@ def _populate_database_now(db):
         import traceback
         traceback.print_exc()
         print("   Server will continue, but data may be incomplete")
-
-def _get_last_discrepancies() -> Optional[DiscrepanciesDto]:
-    with _DISCREP_CACHE_LOCK:
-        return _DISCREP_CACHE
 
 def _to_date(s: str):
     return datetime.strptime(s, "%Y-%m-%d").date()
@@ -530,25 +579,36 @@ async def get_minimum_witches(
     
     Creates a repeating daily schedule that works indefinitely
     
+    OPTIMIZATION: Results are cached for 3 minutes (forecast doesn't change frequently).
+    
     Args:
         safety_margin_percent: Safety margin (0.9 = service at 90% full, default: 0.9)
         unload_time_minutes: Time to unload at market (default: 15 minutes)
-        use_cache: Whether to use cached data
+        use_cache: Whether to use cached data and results
     
     Returns:
         Dict with minimum_witches, schedule, and verification
     """
     try:
-        client = CachedEOGClient(db)
+        # Check cache first (huge performance boost!)
+        if use_cache:
+            cache_key = _get_forecast_cache_key(safety_margin_percent, unload_time_minutes)
+            cached = _get_forecast_cache(cache_key)
+            if cached:
+                return cached
         
-        # Fetch all required data
-        cauldrons = client.get_cauldrons(use_cache=use_cache)
-        couriers = client.get_couriers(use_cache=use_cache)
-        network = client.get_network(use_cache=use_cache)
-        market = client.get_market(use_cache=use_cache)
+        print(f"🔮 Calculating fresh forecast (safety={safety_margin_percent}, unload={unload_time_minutes}min)...")
+        # Use longer cache TTL for forecast to avoid repeated expensive calculations
+        client = CachedEOGClient(db, cache_ttl_minutes=30)
         
-        # Get latest levels
-        latest_data = client.get_latest_levels(use_cache=use_cache)
+        # Fetch all required data (use cache aggressively)
+        cauldrons = client.get_cauldrons(use_cache=True)
+        couriers = client.get_couriers(use_cache=True)
+        network = client.get_network(use_cache=True)
+        market = client.get_market(use_cache=True)
+        
+        # Get latest levels (use cache aggressively)
+        latest_data = client.get_latest_levels(use_cache=True)
         latest_levels = {}
         for point in latest_data:
             cauldron_id = point.cauldron_id
@@ -568,9 +628,9 @@ async def get_minimum_witches(
         # Clean up timestamp keys from latest_levels
         latest_levels_clean = {k: v for k, v in latest_levels.items() if not k.endswith("_timestamp")}
         
-        # Get analyses (contains fill_rate)
+        # Get analyses (contains fill_rate) - use cache aggressively
         service = AnalysisService(db)
-        analyses = service.analyze_all_cauldrons(use_cache=use_cache)
+        analyses = service.analyze_all_cauldrons(use_cache=True)  # Always use cache for forecast
         
         # Convert analyses to dict format expected by ForecastService
         analyses_dict = {}
@@ -587,12 +647,18 @@ async def get_minimum_witches(
             latest_levels=latest_levels_clean
         )
         
-        # Calculate minimum witches
+        # Calculate minimum witches (expensive operation!)
         result = forecast_service.calculate_minimum_witches(
             safety_margin_percent=safety_margin_percent,
             unload_time_minutes=unload_time_minutes
         )
         
+        # Cache the result
+        if use_cache:
+            cache_key = _get_forecast_cache_key(safety_margin_percent, unload_time_minutes)
+            _set_forecast_cache(cache_key, result)
+        
+        print(f"✅ Forecast calculated: {result['minimum_witches']} witches")
         return result
     except Exception as e:
         import traceback
@@ -770,23 +836,37 @@ async def get_drain_events(
 
 @app.post("/api/discrepancies/detect", response_model=DiscrepanciesDto)
 async def detect_discrepancies(
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    start_date: Optional[str] = None,  # YYYY-MM-DD format
+    end_date: Optional[str] = None,    # YYYY-MM-DD format
     db: Session = Depends(get_db),
     use_cache: bool = True
 ):
     """
     Run ticket↔drain reconciliation over the given window (all cauldrons).
     Person 3's implementation - matches tickets to drain events and detects discrepancies.
+    
+    OPTIMIZATION: Results are cached for 5 minutes per date range.
     """
     try:
+        # Parse date strings to datetime objects
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d") if start_date else None
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d") if end_date else None
+        
+        # Check cache first
+        if use_cache:
+            cached = _get_last_discrepancies(start_dt, end_dt)
+            if cached:
+                return cached
+        
+        print(f"🔍 Running fresh discrepancy detection for {start_date} to {end_date}...")
+        
         client = CachedEOGClient(db)
         tickets_dto: TicketsDto = client.get_tickets(use_cache=use_cache)
 
         # --- filter tickets by window (inclusive) ---
-        if start_date or end_date:
-            s = start_date.date() if start_date else None
-            e = end_date.date()   if end_date   else None
+        if start_dt or end_dt:
+            s = start_dt.date() if start_dt else None
+            e = end_dt.date()   if end_dt   else None
             tickets_dto.transport_tickets = [
                 t for t in tickets_dto.transport_tickets
                 if ((s is None or _to_date(t.date) >= s) and
@@ -796,11 +876,11 @@ async def detect_discrepancies(
         service = AnalysisService(db)
 
         # Optional: avoid stale wide cache if a window is specified
-        use_cache_for_analysis = use_cache and not (start_date or end_date)
+        use_cache_for_analysis = use_cache and not (start_dt or end_dt)
 
         analyses = service.analyze_all_cauldrons(
-            start=start_date,
-            end=end_date,
+            start=start_dt,
+            end=end_dt,
             use_cache=use_cache_for_analysis
         )
 
@@ -809,7 +889,8 @@ async def detect_discrepancies(
             drains.extend(ca.drain_events)
 
         result = reconcile_from_live(tickets_dto, drains)
-        _set_last_discrepancies(result)
+        _set_last_discrepancies(result, start_dt, end_dt)
+        print(f"✅ Detection complete: {result.total_discrepancies} discrepancies found")
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -819,24 +900,57 @@ async def detect_discrepancies(
 async def get_discrepancies(
     severity: Optional[str] = None,   # "critical" | "warning" | "info"
     cauldron_id: Optional[str] = None,
-    db: Session = Depends(get_db)     # kept for symmetry; not used here
+    start_date: Optional[str] = None,  # YYYY-MM-DD format
+    end_date: Optional[str] = None,    # YYYY-MM-DD format
+    db: Session = Depends(get_db)
 ):
     """
-    Return the most recent discrepancy run (from POST /api/discrepancies/detect),
-    optionally filtered by severity and/or cauldron_id.
+    Return cached discrepancy results, optionally filtered by severity, cauldron_id, and/or date range.
+    If no cache exists for the specified date range, returns 404.
     """
-    last = _get_last_discrepancies()
+    from datetime import datetime as dt, timedelta
+    
+    # Parse date range for cache lookup
+    start_dt = dt.strptime(start_date, "%Y-%m-%d") if start_date else None
+    end_dt = dt.strptime(end_date, "%Y-%m-%d") if end_date else None
+    
+    last = _get_last_discrepancies(start_dt, end_dt)
     if not last:
-        raise HTTPException(status_code=404, detail="No discrepancies cached yet. Run POST /api/discrepancies/detect first.")
+        raise HTTPException(status_code=404, detail=f"No discrepancies cached for date range {start_date} to {end_date}. Run POST /api/discrepancies/detect first.")
 
     if severity and severity not in {"critical", "warning", "info"}:
         raise HTTPException(status_code=400, detail="Invalid severity. Use one of: critical, warning, info.")
 
     items = last.discrepancies
+    
+    # Apply filters
     if severity:
         items = [d for d in items if d.severity == severity]
     if cauldron_id:
         items = [d for d in items if d.cauldron_id == cauldron_id]
+    
+    # Filter by date range
+    if start_date or end_date:
+        print(f"📅 Filtering discrepancies: start={start_date}, end={end_date}")
+        if start_date:
+            start_dt = dt.strptime(start_date, "%Y-%m-%d").date()
+            before_count = len(items)
+            items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() >= start_dt]
+            print(f"   After start_date filter: {before_count} -> {len(items)} items")
+        
+        if end_date:
+            end_dt = dt.strptime(end_date, "%Y-%m-%d").date()
+            before_count = len(items)
+            items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() <= end_dt]
+            print(f"   After end_date filter: {before_count} -> {len(items)} items")
+    else:
+        # Default: last 7 days to avoid showing old/stale data with 0 values
+        today = dt.now().date()
+        week_ago = today - timedelta(days=7)
+        print(f"📅 No date range provided, defaulting to last 7 days: {week_ago} to {today}")
+        before_count = len(items)
+        items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() >= week_ago]
+        print(f"   After 7-day filter: {before_count} -> {len(items)} items")
 
     def _count(level: str) -> int:
         return sum(1 for d in items if d.severity == level)
@@ -857,57 +971,57 @@ async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time updates"""
     # Accept connection first (required by FastAPI)
     try:
-        await websocket.accept()
+    await websocket.accept()
     except Exception as e:
         print(f"❌ Error accepting WebSocket: {e}")
         return
     
     # Register with manager AFTER accepting
     if websocket not in ws_manager.active_connections:
-        ws_manager.active_connections.append(websocket)
+    ws_manager.active_connections.append(websocket)
     print(f"✅ WebSocket connected. Total connections: {len(ws_manager.active_connections)}")
     
     try:
         # Send initial connection message
         try:
-            await ws_manager.send_personal_message({
-                "type": "connected",
-                "message": "Connected to CauldronWatch real-time updates"
-            }, websocket)
+        await ws_manager.send_personal_message({
+            "type": "connected",
+            "message": "Connected to CauldronWatch real-time updates"
+        }, websocket)
         except Exception as e:
             print(f"⚠️  Error sending initial WebSocket message: {e}")
             # Don't break - connection might still be valid
         
         # Keep connection alive with a simple heartbeat
         # The client doesn't need to send messages, we just broadcast
-        import asyncio
-        try:
+            import asyncio
+            try:
             # Wait for disconnect or client message
             # Use a background task to keep connection alive
             while True:
                 try:
                     # Wait for any message from client (or disconnect)
                     # This keeps the connection alive
-                    await asyncio.wait_for(
-                        websocket.receive_text(),
+                await asyncio.wait_for(
+                    websocket.receive_text(),
                         timeout=30.0  # 30 second timeout
-                    )
+                )
                     # Client sent a message - ignore it (we're just broadcasting)
-                except asyncio.TimeoutError:
-                    # Timeout is normal - connection is still alive
+            except asyncio.TimeoutError:
+                # Timeout is normal - connection is still alive
                     # Check if connection is still valid by trying to send a ping
-                    try:
+                try:
                         if websocket.client_state.value == 1:  # CONNECTED
-                            await ws_manager.send_personal_message({
-                                "type": "ping",
-                                "timestamp": datetime.now().isoformat()
-                            }, websocket)
+                    await ws_manager.send_personal_message({
+                        "type": "ping",
+                        "timestamp": datetime.now().isoformat()
+                    }, websocket)
                         else:
                             # Connection is not in CONNECTED state
                             break
                     except Exception:
                         # Error sending ping - connection is likely closed
-                        break
+                    break
         except WebSocketDisconnect:
             # Normal disconnect
             pass
@@ -1032,10 +1146,10 @@ async def periodic_update():
                         enriched_updates.append(update_dict)
                     
                     if enriched_updates:
-                        await ws_manager.broadcast_cauldron_update({
-                            "cauldrons": enriched_updates,
-                            "timestamp": datetime.now().isoformat()
-                        })
+                    await ws_manager.broadcast_cauldron_update({
+                        "cauldrons": enriched_updates,
+                        "timestamp": datetime.now().isoformat()
+                    })
                 else:
                     # Log when no levels are available
                     if int(current_time) % 60 == 0:  # Only log every minute to avoid spam
@@ -1139,7 +1253,10 @@ async def periodic_update():
                         
                         if tickets_dto.transport_tickets and drains:
                             result = reconcile_from_live(tickets_dto, drains)
-                            _set_last_discrepancies(result)
+                            # Pass date range for last 24 hours
+                            start_time_dt = datetime.now() - timedelta(hours=24)
+                            end_time_dt = datetime.now()
+                            _set_last_discrepancies(result, start_time_dt, end_time_dt)
                             
                             # Check for new discrepancies
                             global _LAST_DISCREPANCY_IDS
