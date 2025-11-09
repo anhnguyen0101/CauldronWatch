@@ -932,17 +932,25 @@ async def get_discrepancies(
     # Filter by date range
     if start_date or end_date:
         print(f"📅 Filtering discrepancies: start={start_date}, end={end_date}")
-        if start_date:
-            start_dt = dt.strptime(start_date, "%Y-%m-%d").date()
-            before_count = len(items)
-            items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() >= start_dt]
-            print(f"   After start_date filter: {before_count} -> {len(items)} items")
+        before_count = len(items)
         
-        if end_date:
-            end_dt = dt.strptime(end_date, "%Y-%m-%d").date()
-            before_count = len(items)
-            items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() <= end_dt]
-            print(f"   After end_date filter: {before_count} -> {len(items)} items")
+        if start_date and end_date and start_date == end_date:
+            # Special case: when start and end are the same, filter to exact date only
+            exact_date = dt.strptime(start_date, "%Y-%m-%d").date()
+            items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() == exact_date]
+            print(f"   After exact date filter ({exact_date}): {before_count} -> {len(items)} items")
+        else:
+            # Normal range filtering
+            if start_date:
+                start_dt = dt.strptime(start_date, "%Y-%m-%d").date()
+                items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() >= start_dt]
+                print(f"   After start_date filter: {before_count} -> {len(items)} items")
+                before_count = len(items)  # Update for next filter
+            
+            if end_date:
+                end_dt = dt.strptime(end_date, "%Y-%m-%d").date()
+                items = [d for d in items if dt.strptime(d.date, "%Y-%m-%d").date() <= end_dt]
+                print(f"   After end_date filter: {before_count} -> {len(items)} items")
     else:
         # Default: last 7 days to avoid showing old/stale data with 0 values
         today = dt.now().date()
