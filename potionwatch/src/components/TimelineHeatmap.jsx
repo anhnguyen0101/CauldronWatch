@@ -6,11 +6,11 @@ import { RefreshCw } from 'lucide-react'
 import { fetchHistoryOptimized, invalidateHistoryCache, prefetchNextRange } from '../services/optimizedApi'
 
 const statusColorMap = {
-  normal: 'border-cyan-400 bg-cyan-700',
-  filling: 'border-sky-400 bg-sky-700',
-  draining: 'border-orange-400 bg-orange-700',
-  overfill: 'border-red-400 bg-red-700',
-  underfill: 'border-gray-400 bg-gray-700'
+  normal: 'border-cyan-400 bg-cyan-400/10 dark:bg-cyan-700/80',
+  filling: 'border-sky-400 bg-sky-400/10 dark:bg-sky-700/80',
+  draining: 'border-orange-400 bg-orange-400/10 dark:bg-orange-700/80',
+  overfill: 'border-red-400 bg-red-400/10 dark:bg-red-700/80',
+  underfill: 'border-gray-400 bg-gray-400/10 dark:bg-gray-700/80'
 }
 
 export default function TimelineHeatmap({ onCellClick } = {}) {
@@ -262,7 +262,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
           <button
             aria-label={playing ? 'Pause' : 'Play'}
             onClick={() => setPlaying(p => !p)}
-            className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60"
+            className="p-2 rounded-md bg-panel-light/50 dark:bg-panel-dark/50 hover:shadow-sm"
           >
             {playing ? '⏸' : '▶'}
           </button>
@@ -270,7 +270,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
           <button
             aria-label={isLive ? 'Pause live' : 'Resume live'}
             onClick={() => setIsLive(v => !v)}
-            className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60"
+            className="p-2 rounded-md bg-panel-light/50 dark:bg-panel-dark/50 hover:shadow-sm"
           >
             {isLive ? '⏸ Pause Live' : '▶ Resume Live'}
           </button>
@@ -282,7 +282,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value)}
               disabled={isLoadingHistory}
-              className="px-3 py-1.5 text-sm rounded-md bg-neutral-800/60 border border-neutral-700 text-white hover:bg-neutral-800/80 focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-sm rounded-md bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {timeRangeOptions.map(option => (
                 <option key={option.value} value={option.value}>
@@ -296,7 +296,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
             )}
             
             {lastFetchTime && !isLoadingHistory && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-600 dark:text-gray-400">
                 (Updated {lastFetchTime.toLocaleTimeString()})
               </span>
             )}
@@ -304,7 +304,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
             <button
               onClick={handleRefresh}
               disabled={isLoadingHistory}
-              className="px-2 py-1.5 text-sm rounded-md bg-neutral-800/60 border border-neutral-700 text-white hover:bg-neutral-800/80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              className="px-2 py-1.5 text-sm rounded-md bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
               title="Refresh timeline data"
             >
               <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
@@ -316,8 +316,8 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
         </div>
       </div>
 
-      <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-panel-light dark:bg-neutral-900 border border-border-light dark:border-neutral-700" style={{ height: 'auto' }}>
-        <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
+      <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-panel-light dark:bg-panel-dark border border-border-light dark:border-border-dark" style={{ height: 'auto' }}>
+        <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
           <div className="inline-flex space-x-2 p-2" style={{ minWidth: 'min-content' }}>
            
             {allColumns.map((column, colIndex) => {
@@ -329,7 +329,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                   className="pw-col flex-shrink-0 px-1"
                   style={{ minWidth: 96 }}
                 >
-                  <div className="sticky top-0 bg-transparent z-10 text-xs text-center text-neutral-300 mb-2 flex flex-col items-center">
+                  <div className="sticky top-0 bg-transparent z-10 text-xs text-center text-text-light/70 dark:text-text-dark/70 mb-2 flex flex-col items-center">
                     <span>{column.time}</span>
                     {isLiveCol && (
                       <span className="text-[10px] text-accent mt-0.5 font-semibold">● LIVE</span>
@@ -354,7 +354,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                       return (
                         <div
                           key={c.id}
-                          className={`${rowIndex % 2 === 0 ? 'bg-neutral-900/0' : 'bg-neutral-900/5'} rounded-md p-1`}
+                          className={`${rowIndex % 2 === 0 ? 'bg-panel-light/0 dark:bg-panel-dark/0' : 'bg-panel-light/5 dark:bg-panel-dark/5'} rounded-md p-1`}
                         >
                           <div
                             onMouseEnter={(e) => {
@@ -374,7 +374,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                             }}
                             onClick={() => handleCellClick(colIndex, c.id)}
                             role="button"
-                            className={`flex flex-col items-center justify-center text-white text-xs w-16 h-16 rounded-md border ${colorClass} ${
+                            className={`flex flex-col items-center justify-center text-text-light dark:text-text-dark text-xs w-16 h-16 rounded-md border ${colorClass} ${
                               isLiveCol ? 'ring-2 ring-accent/80 shadow-lg' : ''
                             } ${
                               hoveredCauldron === c.id ? 'scale-105 ring-2 ring-accent/50' : ''
@@ -383,7 +383,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
                           >
                             <div className="text-[10px] font-medium">{c.name}</div>
                             <div className="text-sm font-semibold mt-1">{Math.round(fill)}%</div>
-                            <div className="text-[10px] text-neutral-200 mt-1">{drain}L</div>
+                            <div className="text-[10px] text-text-light/70 dark:text-text-dark/70 mt-1">{drain}L</div>
                             
                             {alertCount > 0 && (
                               <motion.div
@@ -411,8 +411,8 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
           </div>
         </div>
 
-        <div className="absolute left-0 top-0 h-full w-6 pointer-events-none bg-gradient-to-r from-neutral-900/90 to-transparent" />
-        <div className="absolute right-0 top-0 h-full w-6 pointer-events-none bg-gradient-to-l from-neutral-900/90 to-transparent" />
+        <div className="absolute left-0 top-0 h-full w-6 pointer-events-none bg-gradient-to-r from-panel-light to-transparent dark:from-panel-dark/90" />
+        <div className="absolute right-0 top-0 h-full w-6 pointer-events-none bg-gradient-to-l from-panel-light to-transparent dark:from-panel-dark/90" />
       </div>
 
       {/* Tooltip */}
@@ -425,7 +425,7 @@ export default function TimelineHeatmap({ onCellClick } = {}) {
         return (
           <div
             style={{ position: 'fixed', left, top, zIndex: 60 }}
-            className="w-64 bg-neutral-900/95 text-white p-3 rounded-md shadow-lg"
+            className="w-64 bg-panel-light dark:bg-panel-dark text-text-light dark:text-text-dark p-3 rounded-md shadow-lg border border-border-light dark:border-border-dark"
           >
             <div className="font-semibold flex items-center justify-between">
               <span>{hoveredCell.metrics.name ?? hoveredCell.cauldronId}</span>
