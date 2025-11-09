@@ -29,49 +29,63 @@ export default function Sidebar() {
   }, [theme])
 
   return (
-    <aside className={`relative bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}>
-      <div className="p-4 flex items-start justify-between">
-        <button
-          aria-label={collapsed ? 'Open sidebar' : 'Collapse sidebar'}
-          onClick={() => setCollapsed(s => !s)}
-          className="p-2 rounded-md hover:bg-neutral-800/40 text-black dark:text-gray-300"
-        >
-          {collapsed ? (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
-              <path d="M3 12h18" />
-              <path d="M3 6h18" opacity="0.6" />
-              <path d="M3 18h18" opacity="0.6" />
-            </svg>
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
-              <path d="M6 6l12 12" />
-              <path d="M18 6L6 18" />
-            </svg>
-          )}
-        </button>
+    <aside className={`relative flex flex-col h-full bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 flex-shrink-0 ${collapsed ? 'w-20' : 'w-64'}`}>
+      {/* Logo and Name Section */}
+      <div className="p-4 flex items-center justify-between border-b border-neutral-300 dark:border-neutral-800 gap-2">
+        {!collapsed ? (
+          <>
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <img src={logo} alt="CauldronWatch logo" className="w-12 h-12 object-contain rounded-md flex-shrink-0" />
+              <div className="text-lg font-bold text-black dark:text-gray-200 whitespace-nowrap truncate">FlowGuard AI</div>
+            </div>
+            <button
+              aria-label="Collapse sidebar"
+              onClick={() => setCollapsed(s => !s)}
+              className="p-2 rounded-md hover:bg-neutral-800/40 text-black dark:text-gray-300"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </svg>
+            </button>
+          </>
+        ) : (
+          <div className="flex flex-col items-center w-full gap-2">
+            <img src={logo} alt="CauldronWatch logo" className="w-12 h-12 object-contain rounded-md" />
+            <button
+              aria-label="Open sidebar"
+              onClick={() => setCollapsed(s => !s)}
+              className="p-2 rounded-md hover:bg-neutral-800/40 text-black dark:text-gray-300"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
+                <path d="M3 12h18" />
+                <path d="M3 6h18" opacity="0.6" />
+                <path d="M3 18h18" opacity="0.6" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* hide navigation when collapsed so nothing appears under the hamburger */}
-      {!collapsed && (
-        <nav className="px-2 pt-2 space-y-2 flex-1">
-          {links.map(l => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              className={({ isActive }) =>
-                `block px-4 py-2 rounded-lg ${isActive ? 'bg-neutral-800/60 text-white' : 'hover:bg-neutral-800/40 text-black dark:text-gray-300'}`
-              }
-              end
-            >
-              {l.label}
-              <span className="sr-only">{l.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      )}
+      {/* Navigation */}
+      <nav className={`px-2 pt-2 space-y-2 flex-1 ${collapsed ? 'hidden' : ''}`}>
+        {links.map(l => (
+          <NavLink
+            key={l.to}
+            to={l.to}
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg ${isActive ? 'bg-neutral-800/60 text-white' : 'hover:bg-neutral-800/40 text-black dark:text-gray-300'}`
+            }
+            end
+          >
+            {l.label}
+            <span className="sr-only">{l.label}</span>
+          </NavLink>
+        ))}
+      </nav>
 
       {/* Theme Toggle at Bottom */}
-      <div className="mt-auto border-t border-neutral-300 dark:border-neutral-800 p-4">
+      <div className="mt-auto border-t border-neutral-300 dark:border-neutral-800 p-4 flex-shrink-0">
         {!collapsed ? (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

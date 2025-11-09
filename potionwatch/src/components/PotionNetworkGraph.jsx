@@ -683,7 +683,7 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
                     <g>
                       <circle r={nodeRadius*1.4} fill="#facc15" opacity={0.12} style={{filter: 'url(#marketGlow)'}} />
                       <circle r={nodeRadius} fill="#ffd36b" stroke="#5a3c00" strokeWidth={1} />
-                      <text x={0} y={nodeRadius*1.85} textAnchor="middle" fontSize={14} fontWeight={700} fill="#fff7e6">🏠 Enchanted Market</text>
+                      <text x={0} y={nodeRadius*1.85} textAnchor="middle" fontSize={14} fontWeight={700} fill={isDark ? "#fff7e6" : "#000000"}>🏠 Enchanted Market</text>
                     </g>
                   ) : (
                     <g>
@@ -705,8 +705,18 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
                       {/* percentage label */}
                       <text x={0} y={2} textAnchor="middle" fontSize={12} fontWeight={700} fill={isDark ? '#e6f0f6' : '#06202a'}>{pct}%</text>
 
-                        {/* name above */}
-                        <text x={0} y={-(nodeRadius + 50)} textAnchor="middle" fontSize={11} fill={isDark ? '#9ca3af' : '#334155'}>{n.name}</text>
+                        {/* name to the left */}
+                        <text
+                          x={-nodeRadius - 10}              // shift label to the left of the circle
+                          y={-6}                             // vertical offset for alignment
+                          textAnchor="end"                  // anchor text to its right edge
+                          fontSize={11}
+                          fill={isDark ? '#9ca3af' : '#334155'}
+                        >
+                          {n.name}
+                        </text>
+
+
                     </g>
                   )}
                 </g>

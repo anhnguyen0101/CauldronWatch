@@ -147,7 +147,7 @@ export default function Overview(){
               style={{ height: '600px' }}
             >
               <div className="h-full">
-                <PotionNetworkGraph data={dataProp} />
+              <PotionNetworkGraph data={dataProp} />
               </div>
             </motion.div>
 
@@ -161,12 +161,12 @@ export default function Overview(){
             >
               {/* Alerts Panel - Fixed height */}
               <div className="flex-shrink-0" style={{ height: '240px' }}>
-                <AlertsPanel />
+              <AlertsPanel />
               </div>
               
               {/* Tickets Table - Takes remaining space */}
               <div className="flex-1 min-h-0">
-                <TicketsTable />
+              <TicketsTable />
               </div>
             </motion.div>
           </div>
@@ -180,12 +180,12 @@ export default function Overview(){
         transition={{duration:0.4}} 
         className="min-w-0 w-full mt-6"
       >
-        <div className="card min-w-0 w-full">
-          <div className="min-w-0 w-full">
-            <TimelineHeatmap />
-          </div>
-        </div>
-      </motion.div>
+            <div className="card min-w-0 w-full">
+              <div className="min-w-0 w-full">
+                <TimelineHeatmap />
+              </div>
+            </div>
+          </motion.div>
     </div>
   )
 }

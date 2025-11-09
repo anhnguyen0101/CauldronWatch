@@ -220,14 +220,6 @@ export default function Forecast() {
         </div>
       </div>
 
-      {/* Debug */}
-      <DebugPanel
-        debugInfo={debugInfo}
-        loading={loading}
-        show={showDebug}
-        onToggle={() => setShowDebug((v) => !v)}
-      />
-
       {/* Sections */}
       <MinimumWitches
         data={minimumWitches}

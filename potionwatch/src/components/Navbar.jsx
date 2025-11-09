@@ -2,7 +2,7 @@ import React from 'react'
 
 export default function Navbar(){
   return (
-    <header className="flex items-center justify-end px-6 py-4 border-b border-neutral-800 bg-transparent">
+    <header className="flex items-center justify-end px-6 py-1 border-b border-neutral-800 bg-transparent">
       {/* Theme toggle moved to sidebar */}
     </header>
   )
