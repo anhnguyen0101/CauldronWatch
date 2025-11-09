@@ -2,10 +2,6 @@ import React, { useEffect, useRef, useState } from 'react'
 import bgDark from '../assets/potion_network_bg_dark.png'
 import bgLight from '../assets/potion_network_bg_light.png'
 
-// placeholder sample arrays (will be generated dynamically for 12 nodes if no props provided)
-const sampleCauldrons = []
-const sampleLinks = []
-
 const statusColor = {
   normal: '#10b981',
   filling: '#3b82f6',
@@ -13,7 +9,7 @@ const statusColor = {
   overfill: '#ef4444'
 }
 
-export default function PotionNetworkSVG({ cauldrons: propCauldrons, links: propLinks }){
+export default function PotionNetworkSVG({ cauldrons: propCauldrons = [], links: propLinks = [] }){
   const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
   const bg = isDark ? bgDark : bgLight
 
@@ -36,29 +32,9 @@ export default function PotionNetworkSVG({ cauldrons: propCauldrons, links: prop
   const viewW = 600
   const viewH = 400
 
-  // generate mock data for up to 12 cauldrons if none provided
-  const makeMock = () => {
-    const statuses = ['normal','filling','draining','overfill']
-    const nodes = []
-    for(let i=1;i<=12;i++){
-      nodes.push({ id: `C${i}`, name: `Cauldron ${i}`, level: Math.floor(10 + Math.random()*85), status: statuses[Math.floor(Math.random()*statuses.length)], distance: `${Math.floor(3 + Math.random()*57)}m` })
-    }
-    // deterministic circular connections: connect to next neighbor and every 3rd neighbor
-    const links = []
-    const n = nodes.length
-    for(let i=0;i<n;i++){
-      const a = nodes[i].id
-      const b1 = nodes[(i+1)%n].id
-      const b2 = nodes[(i+3)%n].id
-      if(!links.find(l=> (l.from===a && l.to===b1) || (l.from===b1 && l.to===a))) links.push({ from: a, to: b1 })
-      if(!links.find(l=> (l.from===a && l.to===b2) || (l.from===b2 && l.to===a))) links.push({ from: a, to: b2 })
-    }
-    return { nodes, links }
-  }
-
-  const { nodes: genNodes, links: genLinks } = makeMock()
-  const cauldrons = (propCauldrons && propCauldrons.length) ? propCauldrons : (propCauldrons === null ? [] : genNodes)
-  const links = (propLinks && propLinks.length) ? propLinks : genLinks
+  // Use provided cauldrons and links (from backend)
+  const cauldrons = propCauldrons || []
+  const links = propLinks || []
 
   // px per view-unit (how many pixels correspond to 1 viewBox unit)
   const pxPerViewY = dims.height / viewH

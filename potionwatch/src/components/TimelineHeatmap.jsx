@@ -26,6 +26,14 @@ export default function TimelineHeatmap({ onCellClick } = {}){
   const [columns, setColumns] = useState(() => (history || []).map(h => ({ time: h.time, cauldrons: h.cauldrons || [] })))
   const columnsMapRef = useRef(new Map())
 
+  // DEBUG: Log cauldrons and history data
+  useEffect(() => {
+    console.log('🔍 TimelineHeatmap DEBUG:')
+    console.log('  📊 Cauldrons in store:', cauldrons.length, cauldrons.map(c => ({ id: c.id, name: c.name, level: c.level })))
+    console.log('  📜 History snapshots:', history.length, history.map(h => ({ time: h.time, hasCauldrons: !!h.cauldrons, cauldronsCount: h.cauldrons?.length || 0, avgLevel: h.avgLevel })))
+    console.log('  📦 Columns data:', columns.length, columns.map(col => ({ time: col.time, cauldrons: col.cauldrons.length })))
+  }, [cauldrons, history, columns])
+
   const timerRef = useRef(null)
   const scrollRef = useRef(null)
 
@@ -115,9 +123,22 @@ export default function TimelineHeatmap({ onCellClick } = {}){
                 <div className="grid gap-2" style={{ gridTemplateRows: `repeat(${cauldrons.length}, minmax(0, 1fr))` }}>
                   {cauldrons.map((c, rowIndex) => {
                     const m = getMetrics(day, c.id)
-                    const status = m?.status || 'normal'
+                    
+                    // DEBUG: Log metrics for first cauldron in first column
+                    if (rowIndex === 0 && colIndex === 0) {
+                      console.log(`🔍 TimelineHeatmap Cell DEBUG (${c.id}, ${day.time}):`, {
+                        cauldronFromStore: { id: c.id, name: c.name, level: c.level },
+                        metricsFromHistory: m,
+                        dayCauldrons: day.cauldrons,
+                        calculatedFill: m?.fillPercent ?? (m?.level ?? 0),
+                        fallbackToStoreLevel: !m ? c.level : null
+                      })
+                    }
+                    
+                    // If no metrics in history, use current cauldron level from store
+                    const fill = m?.fillPercent ?? m?.level ?? c.level ?? 0
+                    const status = m?.status || (fill > 95 ? 'overfill' : fill < 20 ? 'underfill' : 'normal')
                     const colorClass = statusColorMap[status] || statusColorMap.normal
-                    const fill = m?.fillPercent ?? (m?.level ?? 0)
                     const drain = m?.drainVolume ?? 0
                     const discrepancy = m?.discrepancy ?? 0
                     const alertCount = m?.alertCount ?? 0

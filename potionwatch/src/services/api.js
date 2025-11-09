@@ -31,21 +31,71 @@ export async function fetchHistory(cauldronId = null, startDate = null, endDate 
   
   const response = await api.get('/api/data', { params })
   
-  // Transform to format expected by frontend
-  // Group by timestamp and calculate average level
+  console.log('📜 fetchHistory: Received', response.data.length, 'data points from backend')
+  if (response.data.length > 0) {
+    console.log('📜 Sample data point:', {
+      cauldron_id: response.data[0].cauldron_id,
+      level: response.data[0].level,
+      timestamp: response.data[0].timestamp
+    })
+  }
+  
+  // Note: Backend returns level in LITERS, not percentage
+  // We'll need cauldron capacities to convert to percentage
+  // For now, return raw data and let useInit.js handle conversion using store cauldrons
+  
+  // Group by time (minute-level granularity for timeline)
   const grouped = {}
   response.data.forEach(point => {
-    const timeKey = new Date(point.timestamp).toLocaleDateString()
+    // Group by minute for timeline display
+    const date = new Date(point.timestamp)
+    const timeKey = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`
+    
     if (!grouped[timeKey]) {
-      grouped[timeKey] = { time: timeKey, levels: [] }
+      grouped[timeKey] = { 
+        time: timeKey, 
+        levels: [], // Store levels in liters for later conversion
+        cauldrons: [] // Store per-cauldron data with liters
+      }
     }
-    grouped[timeKey].levels.push(point.level)
+    grouped[timeKey].levels.push(point.level || 0)
+    
+    // Store cauldron data with raw level (in liters)
+    const cauldronData = {
+      id: point.cauldron_id || point.id,
+      levelLiters: point.level || 0, // Store raw level in liters
+      level: 0, // Will be converted to percentage later
+      fillPercent: 0, // Will be converted to percentage later
+      status: 'normal' // Will be calculated after percentage conversion
+    }
+    
+    // Check if this cauldron already exists in this snapshot (keep latest)
+    const existingIndex = grouped[timeKey].cauldrons.findIndex(c => c.id === cauldronData.id)
+    if (existingIndex === -1) {
+      grouped[timeKey].cauldrons.push(cauldronData)
+    } else {
+      // Update with latest data
+      grouped[timeKey].cauldrons[existingIndex] = cauldronData
+    }
   })
   
-  return Object.values(grouped).map(snapshot => ({
+  const snapshots = Object.values(grouped).map(snapshot => ({
     time: snapshot.time,
-    avgLevel: Math.round(snapshot.levels.reduce((a, b) => a + b, 0) / snapshot.levels.length)
+    avgLevel: 0, // Will be calculated after percentage conversion
+    cauldrons: snapshot.cauldrons, // Include per-cauldron data (with levelLiters)
+    _levelsLiters: snapshot.levels // Temporary: store liters for conversion
   }))
+  
+  console.log('📜 fetchHistory: Created', snapshots.length, 'snapshots (with levelLiters, will convert to % later)')
+  if (snapshots.length > 0) {
+    console.log('📜 Sample snapshot (before conversion):', {
+      time: snapshots[0].time,
+      cauldronsCount: snapshots[0].cauldrons.length,
+      sampleCauldron: snapshots[0].cauldrons[0]
+    })
+  }
+  
+  return snapshots
 }
 
 // Fetch tickets
