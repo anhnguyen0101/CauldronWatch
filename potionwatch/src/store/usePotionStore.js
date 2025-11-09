@@ -1,4 +1,4 @@
-import create from 'zustand'
+import { create } from 'zustand'
 
 const initialCauldrons = [
   { id: 'a1', name: 'A1', lat: 40.73061, lng: -73.935242, level: 60 },
