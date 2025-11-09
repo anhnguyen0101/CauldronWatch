@@ -100,15 +100,15 @@ export default function Forecast() {
     <div className="space-y-6">
       {/* Header + toggle */}
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-semibold text-slate-50">
+        <h2 className="text-3xl font-semibold text-text-light dark:text-slate-50">
           Forecast &amp; Routes
         </h2>
-        <div className="inline-flex bg-slate-800 text-slate-300 rounded-full p-1 gap-1">
+        <div className="inline-flex bg-panel-light text-text-light dark:bg-slate-800 dark:text-slate-300 rounded-full p-1 gap-1">
           <button
             onClick={() => setMode("today")}
             className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${mode === "today"
               ? "bg-sky-500 text-white"
-              : "hover:bg-slate-700"
+              : "hover:bg-slate-200 dark:hover:bg-slate-700"
               }`}
           >
             Today
@@ -117,7 +117,7 @@ export default function Forecast() {
             onClick={() => setMode("tomorrow")}
             className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${mode === "tomorrow"
               ? "bg-sky-500 text-white"
-              : "hover:bg-slate-700"
+              : "hover:bg-slate-200 dark:hover:bg-slate-700"
               }`}
           >
             Simulate Tomorrow

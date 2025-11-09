@@ -96,8 +96,8 @@ export default function Overview(){
 
       {/* Show loading message if no cauldrons loaded yet */}
       {cauldrons.length === 0 ? (
-        <div className="card">
-          <div className="text-center py-8 text-gray-400">
+          <div className="card">
+          <div className="text-center py-8 text-text-light dark:text-gray-400">
             Loading cauldrons from backend...
           </div>
         </div>
@@ -118,7 +118,7 @@ export default function Overview(){
           {/* Timeline bar full width */}
           <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{duration:0.4}} className="min-w-0 w-full">
             <div className="card min-w-0 w-full">
-              <div className="mb-2 text-sm text-gray-400">Timeline</div>
+              <div className="mb-2 text-sm text-text-light dark:text-gray-400">Timeline</div>
               <div className="min-w-0 w-full">
                 <TimelineHeatmap />
               </div>
