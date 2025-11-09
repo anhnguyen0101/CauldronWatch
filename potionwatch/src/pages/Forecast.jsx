@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import PredictedOverflows from "../components/forecast/PredicredOverflows";
 import OptimizedRoutes from "../components/forecast/OptimizedRoutes";
-import DebugPanel from "../components/forecast/DebugPanel";
 import MinimumWitches from "../components/forecast/MinimumWitches";
 import DailySchedule from "../components/forecast/DailySchedule";
 import {
