@@ -16,7 +16,10 @@ class DateRange(BaseModel):
 
 class HistoricalDataMetadataDto(BaseModel):
     """Metadata about historical data"""
-    pass  # Will be populated based on actual API response
+    start_date: datetime
+    end_date: datetime
+    interval_minutes: int
+    unit: str  # e.g., "liters"
 
 
 class HistoricalDataPointDto(BaseModel):

@@ -19,7 +19,8 @@ from backend.models.schemas import (
     HistoricalDataDto,
     TicketDto,
     MarketDto,
-    CourierDto
+    CourierDto,
+    HistoricalDataMetadataDto
 )
 
 
@@ -276,4 +277,40 @@ class CacheManager:
         """Get cache metadata"""
         metadata = self.db.query(CacheMetadata).filter_by(key=key).first()
         return metadata.value if metadata else None
+    
+    # ==================== Historical Data Metadata Caching ====================
+    
+    def cache_data_metadata(self, metadata: HistoricalDataMetadataDto):
+        """Cache historical data metadata"""
+        import json
+        value = json.dumps({
+            'start_date': metadata.start_date.isoformat(),
+            'end_date': metadata.end_date.isoformat(),
+            'interval_minutes': metadata.interval_minutes,
+            'unit': metadata.unit
+        })
+        self.set_cache_metadata('data_metadata', value)
+    
+    def get_cached_data_metadata(self, max_age_minutes: int = 60) -> Optional[HistoricalDataMetadataDto]:
+        """Get cached data metadata if fresh enough"""
+        cutoff = datetime.utcnow() - timedelta(minutes=max_age_minutes)
+        cached = self.db.query(CacheMetadata).filter(
+            CacheMetadata.key == 'data_metadata',
+            CacheMetadata.last_updated >= cutoff
+        ).first()
+        
+        if cached and cached.value:
+            import json
+            try:
+                data = json.loads(cached.value)
+                return HistoricalDataMetadataDto(
+                    start_date=datetime.fromisoformat(data['start_date'].replace('Z', '+00:00')),
+                    end_date=datetime.fromisoformat(data['end_date'].replace('Z', '+00:00')),
+                    interval_minutes=data['interval_minutes'],
+                    unit=data['unit']
+                )
+            except Exception as e:
+                print(f"⚠️  Error parsing cached data metadata: {e}")
+                return None
+        return None
 
