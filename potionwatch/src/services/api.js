@@ -259,3 +259,57 @@ export async function fetchDailySchedule(targetDate = null) {
     return { date: null, minimum_witches: 0, schedules: [], total_tasks: 0, repeating: false }
   }
 }
+
+// AI-Powered Insights Endpoints
+export async function fetchAISummary(timeRange = "24 hours") {
+  try {
+    const response = await api.get('/api/ai/summary', {
+      params: { time_range: timeRange }
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching AI summary:', error)
+    return {
+      summary: "Unable to generate AI summary at this time.",
+      key_findings: [],
+      recommendations: [],
+      risk_level: "UNKNOWN",
+      generated_at: new Date().toISOString()
+    }
+  }
+}
+
+export async function fetchAIOptimizationPlan() {
+  try {
+    const response = await api.get('/api/ai/optimization-plan')
+    return response.data
+  } catch (error) {
+    console.error('Error fetching AI optimization plan:', error)
+    return {
+      plan: "Unable to generate optimization plan at this time.",
+      witch_allocation: { witches_needed: 0, rationale: "" },
+      expected_savings: { witch_hours_saved: "0 hours", cost_reduction: "0%" },
+      implementation_steps: [],
+      generated_at: new Date().toISOString()
+    }
+  }
+}
+
+export async function fetchAIFraudAnalysis(startDate = null, endDate = null) {
+  try {
+    const params = {}
+    if (startDate) params.start_date = startDate
+    if (endDate) params.end_date = endDate
+    
+    const response = await api.get('/api/ai/fraud-analysis', { params })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching AI fraud analysis:', error)
+    return {
+      suspicious_patterns: [],
+      courier_risk_scores: {},
+      investigation_priorities: [],
+      generated_at: new Date().toISOString()
+    }
+  }
+}
