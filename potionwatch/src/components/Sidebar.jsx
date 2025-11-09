@@ -29,7 +29,7 @@ export default function Sidebar() {
   }, [theme])
 
   return (
-    <aside className={`relative flex flex-col bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}>
+    <aside className={`relative flex flex-col h-screen bg-neutral-200 dark:bg-neutral-950 text-black dark:text-gray-200 border-r border-neutral-300 dark:border-neutral-800 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}>
       {/* Logo and Name Section */}
       <div className="p-4 flex items-center justify-between border-b border-neutral-300 dark:border-neutral-800 gap-2">
         {!collapsed ? (
@@ -68,26 +68,24 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      {!collapsed && (
-        <nav className="px-2 pt-2 space-y-2 flex-1">
-          {links.map(l => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              className={({ isActive }) =>
-                `block px-4 py-2 rounded-lg ${isActive ? 'bg-neutral-800/60 text-white' : 'hover:bg-neutral-800/40 text-black dark:text-gray-300'}`
-              }
-              end
-            >
-              {l.label}
-              <span className="sr-only">{l.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      )}
+      <nav className={`px-2 pt-2 space-y-2 flex-1 ${collapsed ? 'hidden' : ''}`}>
+        {links.map(l => (
+          <NavLink
+            key={l.to}
+            to={l.to}
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg ${isActive ? 'bg-neutral-800/60 text-white' : 'hover:bg-neutral-800/40 text-black dark:text-gray-300'}`
+            }
+            end
+          >
+            {l.label}
+            <span className="sr-only">{l.label}</span>
+          </NavLink>
+        ))}
+      </nav>
 
       {/* Theme Toggle at Bottom */}
-      <div className="mt-auto border-t border-neutral-300 dark:border-neutral-800 p-4">
+      <div className="mt-auto border-t border-neutral-300 dark:border-neutral-800 p-4 flex-shrink-0">
         {!collapsed ? (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
