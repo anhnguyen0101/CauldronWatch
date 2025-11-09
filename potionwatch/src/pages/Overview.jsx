@@ -22,30 +22,40 @@ export default function Overview(){
   const market = usePotionStore(s => s.market)
 
   // Build data object expected by PotionNetworkGraph ({ nodes, links })
-  const nodes = cauldrons.map(c => ({
+  const nodes = cauldrons.map(c => {
     // Support multiple possible id/field names from backend
-    id: c.cauldron_id || c.id || c.cauldronId,
-    name: c.name || c.label || (`${c.cauldron_id || c.id}`),
-    // convert store level (0..100) to fillPercent for graph
-    fillPercent: c.level ?? c.fillPercent ?? 0,
-    status: c.status || 'normal',
-    // include both lat/lng and latitude/longitude, in case backend used either
-    lat: typeof c.lat === 'number' ? c.lat : (typeof c.latitude === 'number' ? c.latitude : undefined),
-    lng: typeof c.lng === 'number' ? c.lng : (typeof c.longitude === 'number' ? c.longitude : undefined),
-    // expose normalized x/y (0..1) if desired by other components
-    x: (typeof (c.lng ?? c.longitude) === 'number' ? ( ((c.lng ?? c.longitude) + 180) / 360 ) : undefined),
-    y: (typeof (c.lat ?? c.latitude) === 'number' ? ( (90 - (c.lat ?? c.latitude)) / 180 ) : undefined),
-    isMarket: false
-  }))
+    const lat = c.latitude ?? c.lat
+    const lng = c.longitude ?? c.lng
+    
+    return {
+      id: c.cauldron_id || c.id || c.cauldronId,
+      name: c.name || c.label || (`${c.cauldron_id || c.id}`),
+      // convert store level (0..100) to fillPercent for graph
+      fillPercent: c.level ?? c.fillPercent ?? 0,
+      status: c.status || 'normal',
+      // Include both formats for maximum compatibility
+      lat: typeof lat === 'number' ? lat : undefined,
+      lng: typeof lng === 'number' ? lng : undefined,
+      latitude: typeof lat === 'number' ? lat : undefined,
+      longitude: typeof lng === 'number' ? lng : undefined,
+      isMarket: false
+    }
+  })
 
   if (market) {
+    const marketLat = market.latitude ?? market.lat
+    const marketLng = market.longitude ?? market.lng
+    
     nodes.push({
       id: market.id || 'market_001',
-      name: market.name || 'Market',
+      name: market.name || 'Enchanted Market',
       fillPercent: 0,
       status: 'normal',
-      x: (typeof market.longitude === 'number' ? ((market.longitude + 180) / 360) : (market.lng && typeof market.lng === 'number' ? ((market.lng + 180)/360) : undefined)),
-      y: (typeof market.latitude === 'number' ? ((90 - market.latitude) / 180) : (market.lat && typeof market.lat === 'number' ? ((90 - market.lat)/180) : undefined)),
+      // Include both formats for maximum compatibility
+      lat: typeof marketLat === 'number' ? marketLat : undefined,
+      lng: typeof marketLng === 'number' ? marketLng : undefined,
+      latitude: typeof marketLat === 'number' ? marketLat : undefined,
+      longitude: typeof marketLng === 'number' ? marketLng : undefined,
       isMarket: true
     })
   }

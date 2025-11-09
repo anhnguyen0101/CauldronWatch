@@ -29,10 +29,14 @@ export default function useInit(){
         return {
           id: cauldronId,
           name: c.name || cauldronId,
-          lat: c.latitude,
-          lng: c.longitude,
+          // Support both lat/lng and latitude/longitude formats
+          lat: c.latitude ?? c.lat,
+          lng: c.longitude ?? c.lng,
+          latitude: c.latitude ?? c.lat,
+          longitude: c.longitude ?? c.lng,
           level: 0, // Will be updated by latest levels
-          capacity: c.capacity || c.max_volume || 1000
+          capacity: c.capacity || c.max_volume || 1000,
+          status: c.status || 'normal' // Include status if available
         }
       })
       
