@@ -412,34 +412,37 @@ export default function TimelineHeatmap({ onCellClick } = {}){
         </div>
       </div>
 
-      {hoveredCell && hoveredCell.metrics && hoveredCell.rect && createPortal((() => {
-        const r = hoveredCell.rect
-        const left = Math.min(window.innerWidth - 260, r.right + 8)
-        const top = Math.max(8, r.top - 8)
-        const isLiveCol = hoveredCell.colIndex === (columns.length - 1)
-        return (
-          <div
-            style={{ position: 'fixed', left, top, zIndex: 60 }}
-            className="w-64 bg-panel-light dark:bg-panel-dark text-text-light dark:text-text-dark p-3 rounded-md shadow-lg border border-border-light dark:border-border-dark"
-          >
-            <div className="font-semibold flex items-center justify-between">
-              <span>{hoveredCell.metrics.name ?? hoveredCell.cauldronId}</span>
-              {isLiveCol && (
-                <span className="text-xs text-accent font-bold">● LIVE</span>
-              )}
+      {hoveredCell && hoveredCell.metrics && hoveredCell.rect && createPortal(
+        (() => {
+          const r = hoveredCell.rect
+          const left = Math.min(window.innerWidth - 260, r.right + 8)
+          const top = Math.max(8, r.top - 8)
+          const isLiveCol = hoveredCell.colIndex === (columns.length - 1)
+          return (
+            <div
+              style={{ position: 'fixed', left, top, zIndex: 60 }}
+              className="w-64 bg-panel-light dark:bg-panel-dark text-text-light dark:text-text-dark p-3 rounded-md shadow-lg border border-border-light dark:border-border-dark"
+            >
+              <div className="font-semibold flex items-center justify-between">
+                <span>{hoveredCell.metrics.name ?? hoveredCell.cauldronId}</span>
+                {isLiveCol && (
+                  <span className="text-xs text-accent font-bold">● LIVE</span>
+                )}
+              </div>
+              <div className="text-xs text-neutral-300">Time: {hoveredCell.column?.time || hoveredCell.day?.time}</div>
+              <div className="mt-1 text-sm">
+                Status: <span className="font-medium">{hoveredCell.metrics.status}</span>
+              </div>
+              <div className="text-xs">Fill: {hoveredCell.metrics.fillPercent ?? hoveredCell.metrics.level}%</div>
+              <div className="text-xs">Drain volume: {hoveredCell.metrics.drainVolume}L</div>
+              <div className="text-xs">Discrepancy: {hoveredCell.metrics.discrepancy}</div>
+              <div className="text-xs">Alerts: {hoveredCell.metrics.alertCount}</div>
+              <div className="text-xs">Predicted overflow: {hoveredCell.day?.forecast?.find(f=>f.id===hoveredCell.cauldronId)?.predictedOverflow ? 'Yes' : 'No'}</div>
             </div>
-            <div className="text-xs text-neutral-300">Time: {hoveredCell.column?.time || hoveredCell.day?.time}</div>
-            <div className="mt-1 text-sm">
-              Status: <span className="font-medium">{hoveredCell.metrics.status}</span>
-            </div>
-            <div className="text-xs">Fill: {hoveredCell.metrics.fillPercent ?? hoveredCell.metrics.level}%</div>
-            <div className="text-xs">Drain volume: {hoveredCell.metrics.drainVolume}L</div>
-            <div className="text-xs">Discrepancy: {hoveredCell.metrics.discrepancy}</div>
-            <div className="text-xs">Alerts: {hoveredCell.metrics.alertCount}</div>
-            <div className="text-xs">Predicted overflow: {hoveredCell.day?.forecast?.find(f=>f.id===hoveredCell.cauldronId)?.predictedOverflow ? 'Yes' : 'No'}</div>
-          </div>
-        )
-      })(), document.body))}
+          )
+        })(),
+        document.body
+      )}
     </div>
   )
 }
