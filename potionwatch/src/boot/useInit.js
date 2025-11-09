@@ -25,17 +25,23 @@ export default function useInit(){
     fetchCauldrons().then(cauldrons => {
       console.log('📦 Fetched cauldrons from backend:', cauldrons.length)
       // Transform backend format to frontend format
-      // Backend returns: {id, latitude, longitude, max_volume, name}
+      // Backend returns: {id, latitude, longitude, max_volume, name, x, y (optional)}
       const transformed = cauldrons.map(c => {
         const cauldronId = c.cauldron_id || c.id
-        return {
+        const result = {
           id: cauldronId,
           name: c.name || cauldronId,
           lat: c.latitude,
           lng: c.longitude,
+          latitude: c.latitude,  // Add both formats for compatibility
+          longitude: c.longitude,
           level: 0, // Will be updated by latest levels
           capacity: c.capacity || c.max_volume || 1000
         }
+        // Include x, y if provided by backend (precomputed coordinates)
+        if (typeof c.x === 'number') result.x = c.x
+        if (typeof c.y === 'number') result.y = c.y
+        return result
       })
       
       console.log('✅ Transformed cauldrons:', transformed.length, transformed[0])

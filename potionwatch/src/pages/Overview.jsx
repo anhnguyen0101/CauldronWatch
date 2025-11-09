@@ -29,7 +29,18 @@ export default function Overview(){
     if (process.env.NODE_ENV === 'development') {
       console.log('🔄 Overview: Recomputing nodes (lastUpdate:', lastUpdate, ', cauldrons:', cauldrons.length, ')')
       if (cauldrons.length > 0) {
-        console.log('   Sample cauldron:', { id: cauldrons[0].id, name: cauldrons[0].name, level: cauldrons[0].level })
+        console.log('   Sample cauldron:', { 
+          id: cauldrons[0].id, 
+          name: cauldrons[0].name, 
+          level: cauldrons[0].level,
+          x: cauldrons[0].x,
+          y: cauldrons[0].y,
+          hasXY: typeof cauldrons[0].x === 'number' && typeof cauldrons[0].y === 'number'
+        })
+        // Log high level cauldrons
+        cauldrons.filter(c => c.level > 90).forEach(c => {
+          console.log(`   🔥 High level: ${c.name} = ${c.level}%`)
+        })
       }
     }
     
