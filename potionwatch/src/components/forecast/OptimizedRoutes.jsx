@@ -19,7 +19,7 @@ export default function OptimizedRoutes({ routes, nextPickupMins, error }) {
 
             {routes.length === 0 || error ? (
                 <div className="space-y-2">
-                    <p className="text-slate-400">
+                    <p className="text-neutral-600 dark:text-slate-400">
                         No urgent routes. Couriers are idle. 🧹
                     </p>
                 </div>

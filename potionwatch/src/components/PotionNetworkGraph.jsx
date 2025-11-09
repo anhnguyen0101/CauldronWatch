@@ -267,11 +267,44 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     return nodePositions.get(node.id) || { x: centerX, y: centerY }
   }
 
+  // Status colors matching TimelineHeatmap legend exactly
   const statusColor = {
-    normal: '#10b981',
-    filling: '#3b82f6',
-    draining: '#f97316',
-    overfill: '#ef4444'
+    normal: '#10b981', // emerald-500
+    filling: '#10b981', // emerald-500 (same as normal)
+    draining: '#fb923c', // orange-400 (matching TimelineHeatmap)
+    overfill: '#f87171', // red-400 (matching TimelineHeatmap)
+    underfill: '#9ca3af' // gray-400 (matching TimelineHeatmap)
+  }
+
+  // Map fill percentage to color matching TimelineHeatmap logic
+  const fillPercentToColor = (fill, status) => {
+    // Preserve explicit statuses first
+    if (status === 'overfill') return statusColor.overfill
+    if (status === 'underfill') return statusColor.underfill
+    if (status === 'draining') return statusColor.draining
+
+    const pct = Number(fill) || 0
+
+    // Overfill: ≥95%
+    if (pct >= 95) return statusColor.overfill
+
+    // Normal range: 50-95% -> darker green (emerald-800) - #065f46
+    if (pct > 50 && pct < 95) {
+      return '#065f46' // emerald-800 (matching TimelineHeatmap darker green)
+    }
+
+    // Normal range: 20-50% -> medium green (emerald-500)
+    if (pct > 20 && pct <= 50) {
+      return '#10b981' // emerald-500 (matching TimelineHeatmap light green)
+    }
+
+    // Underfill: <20%
+    if (pct < 20) {
+      return statusColor.underfill
+    }
+
+    // Fallback: normal
+    return statusColor.normal
   }
 
   // helper for edge color intensity
@@ -658,7 +691,8 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
               // Use optimized pos function - no index needed anymore
               const p = pos(n)
               const pct = Math.max(0, Math.min(100, Number(n.fillPercent) || 0))
-              const color = statusColor[n.status] || statusColor.normal
+              // Use fill percentage-based color matching TimelineHeatmap
+              const color = fillPercentToColor(pct, n.status)
               const glowColor = color
               const filled = (pct/100) * circ
               const dash = `${filled} ${circ}`

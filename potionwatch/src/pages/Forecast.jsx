@@ -184,24 +184,24 @@ export default function Forecast() {
     <div className="space-y-6">
       {/* Header + toggle */}
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-semibold text-slate-50">
+        <h2 className="text-3xl font-semibold text-text-light dark:text-slate-50">
           Forecast &amp; Routes
         </h2>
         <div className="flex items-center gap-3">
           <button
             onClick={() => updateForecastData(true)} // Force refresh
             disabled={loadingForecast}
-            className="px-3 py-1.5 text-sm rounded-md bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-3 py-1.5 text-sm rounded-md bg-neutral-700 dark:bg-slate-700 hover:bg-neutral-600 dark:hover:bg-slate-600 text-white dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             title="Refresh forecast data"
           >
             {loadingForecast ? "Refreshing..." : "🔄 Refresh"}
           </button>
-          <div className="inline-flex bg-slate-800 text-slate-300 rounded-full p-1 gap-1">
+          <div className="inline-flex bg-neutral-200 dark:bg-slate-800 text-neutral-700 dark:text-slate-300 rounded-full p-1 gap-1">
             <button
               onClick={() => setMode("today")}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${mode === "today"
                 ? "bg-sky-500 text-white"
-                : "hover:bg-slate-700"
+                : "hover:bg-neutral-300 dark:hover:bg-slate-700"
                 }`}
             >
               Today
@@ -210,7 +210,7 @@ export default function Forecast() {
               onClick={() => setMode("tomorrow")}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${mode === "tomorrow"
                 ? "bg-sky-500 text-white"
-                : "hover:bg-slate-700"
+                : "hover:bg-neutral-300 dark:hover:bg-slate-700"
                 }`}
             >
               Simulate Tomorrow

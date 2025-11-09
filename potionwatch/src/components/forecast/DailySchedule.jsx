@@ -22,27 +22,27 @@ function formatDuration(minutes) {
 export default function DailySchedule({ data, loading, error }) {
   if (loading) {
     return (
-      <div className="bg-[#050608] text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
+      <div className="bg-panel-light dark:bg-[#050608] text-text-light dark:text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
         <h3 className="text-2xl font-semibold mb-3">Daily Pickup Schedule</h3>
-        <p className="text-slate-400">Loading...</p>
+        <p className="text-neutral-600 dark:text-slate-400">Loading...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-[#050608] text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
+      <div className="bg-panel-light dark:bg-[#050608] text-text-light dark:text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
         <h3 className="text-2xl font-semibold mb-3">Daily Pickup Schedule</h3>
-        <p className="text-red-400">Error: {error}</p>
+        <p className="text-red-600 dark:text-red-400">Error: {error}</p>
       </div>
     );
   }
 
   if (!data || !data.schedules || data.schedules.length === 0) {
     return (
-      <div className="bg-[#050608] text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
+      <div className="bg-panel-light dark:bg-[#050608] text-text-light dark:text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
         <h3 className="text-2xl font-semibold mb-3">Daily Pickup Schedule</h3>
-        <p className="text-slate-400">No schedule generated</p>
+        <p className="text-neutral-600 dark:text-slate-400">No schedule generated</p>
       </div>
     );
   }
@@ -50,24 +50,24 @@ export default function DailySchedule({ data, loading, error }) {
   const { schedules, date, total_tasks } = data;
 
   return (
-    <div className="bg-[#050608] text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
+    <div className="bg-panel-light dark:bg-[#050608] text-text-light dark:text-slate-50 rounded-3xl px-6 py-5 shadow-xl">
       <div className="flex items-baseline justify-between mb-4">
         <h3 className="text-2xl font-semibold">Daily Pickup Schedule</h3>
         <div className="flex items-center gap-3">
           {data.repeating && (
-            <div className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded">
+            <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-400/10 dark:bg-emerald-400/10 px-2 py-1 rounded">
               🔁 Repeating Daily
             </div>
           )}
           {date && (
-            <div className="text-sm text-slate-400">
+            <div className="text-sm text-neutral-600 dark:text-slate-400">
               {new Date(date).toLocaleDateString()}
             </div>
           )}
         </div>
       </div>
 
-      <div className="text-sm text-slate-400 mb-4">
+      <div className="text-sm text-neutral-600 dark:text-slate-400 mb-4">
         {total_tasks} total tasks across {schedules.length} {schedules.length === 1 ? "witch" : "witches"}
       </div>
 
@@ -75,29 +75,29 @@ export default function DailySchedule({ data, loading, error }) {
         {schedules.map((schedule, idx) => (
           <div
             key={schedule.courier_id || idx}
-            className="bg-slate-950/40 border border-slate-800/70 rounded-2xl px-4 py-4"
+            className="bg-panel-light/80 dark:bg-slate-950/40 border border-border-light dark:border-slate-800/70 rounded-2xl px-4 py-4"
           >
             <div className="flex items-center justify-between mb-3">
               <div>
-                <div className="text-lg font-semibold text-sky-300">
+                <div className="text-lg font-semibold text-sky-600 dark:text-sky-300">
                   {schedule.courier_name || schedule.courier_id}
                 </div>
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-neutral-600 dark:text-slate-400">
                   Capacity: {Math.round(schedule.capacity)}L
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm text-slate-300">
+                <div className="text-sm text-text-light dark:text-slate-300">
                   {schedule.tasks.length} {schedule.tasks.length === 1 ? "task" : "tasks"}
                 </div>
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-neutral-600 dark:text-slate-400">
                   {formatDuration(schedule.total_time_minutes)} total
                 </div>
               </div>
             </div>
 
             {schedule.route && schedule.route.length > 0 && (
-              <div className="mb-2 text-xs text-slate-500">
+              <div className="mb-2 text-xs text-neutral-500 dark:text-slate-500">
                 Route: {schedule.route.join(' → ')}
               </div>
             )}
@@ -107,22 +107,22 @@ export default function DailySchedule({ data, loading, error }) {
                 {schedule.tasks.map((task, taskIdx) => (
                   <div
                     key={taskIdx}
-                    className="flex items-center gap-3 text-sm bg-slate-900/40 rounded-lg px-3 py-2"
+                    className="flex items-center gap-3 text-sm bg-gray-100 dark:bg-slate-900/40 rounded-lg px-3 py-2"
                   >
-                    <div className="w-20 text-slate-400 text-xs">
+                    <div className="w-20 text-neutral-600 dark:text-slate-400 text-xs">
                       {task.pickup_time ? formatTime(task.pickup_time) : 
                        `${Math.round(task.pickup_time_minutes || 0)}m`}
                     </div>
                     <div className="flex-1">
-                      <div className="font-medium text-slate-200">
+                      <div className="font-medium text-text-light dark:text-slate-200">
                         {task.cauldron_name || task.cauldron_id}
                       </div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs text-neutral-600 dark:text-slate-400">
                         {Math.round(task.expected_volume || 0)}L • {formatDuration(task.total_time_minutes || 0)}
                         {task.drain_duration && ` (drain: ${formatDuration(task.drain_duration)})`}
                       </div>
                     </div>
-                    <div className="text-xs text-slate-500">
+                    <div className="text-xs text-neutral-500 dark:text-slate-500">
                       → Market
                     </div>
                   </div>
@@ -130,7 +130,7 @@ export default function DailySchedule({ data, loading, error }) {
               </div>
             )}
 
-            <div className="mt-3 pt-3 border-t border-slate-800 text-xs text-slate-500">
+            <div className="mt-3 pt-3 border-t border-border-light dark:border-slate-800 text-xs text-neutral-500 dark:text-slate-500">
               Total volume: {Math.round(schedule.total_volume)}L / {Math.round(schedule.capacity)}L
             </div>
           </div>

@@ -259,6 +259,38 @@ export default function TimelineHeatmap({ onCellClick } = {}){
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="text-sm font-semibold text-text-light dark:text-gray-400">Time Line Series Heat Map</div>
+          {isLive && (
+            <div className="flex items-center gap-1.5 ml-2">
+              <div className="relative flex items-center justify-center">
+                {/* Pulsing ring effect */}
+                <motion.div
+                  className="absolute w-2 h-2 rounded-full bg-red-500"
+                  animate={{
+                    scale: [1, 2.5, 2.5],
+                    opacity: [0.8, 0, 0],
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: "easeOut",
+                  }}
+                />
+                {/* Main dot */}
+                <motion.div
+                  className="relative w-2 h-2 rounded-full bg-red-500"
+                  animate={{
+                    scale: [1, 1.1, 1],
+                  }}
+                  transition={{
+                    duration: 1.5,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
+                />
+              </div>
+              <span className="text-xs font-medium text-red-500 dark:text-red-400">LIVE</span>
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-3 flex-wrap">
@@ -312,7 +344,33 @@ export default function TimelineHeatmap({ onCellClick } = {}){
         </div>
       </div>
 
-      <div className="text-xs text-text-light/70 dark:text-gray-400 mb-2">Heatmap (latest on right). Click a cell to apply snapshot.</div>
+      <div className="flex items-center gap-4 flex-wrap mb-2">
+        <div className="text-xs text-text-light/70 dark:text-gray-400">Heatmap (latest on right). Click a cell to apply snapshot.</div>
+        
+        {/* Color Legend */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full border border-gray-400 bg-gray-400/10 dark:bg-gray-700/80" title="Underfill: &lt;20%"></div>
+            <span className="text-xs text-text-light/70 dark:text-gray-400">&lt;20%</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full border border-emerald-500 bg-emerald-500/10 dark:bg-emerald-700/80" title="Normal: 20-50%"></div>
+            <span className="text-xs text-text-light/70 dark:text-gray-400">20-50%</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full border border-emerald-800 bg-emerald-800/10 dark:bg-emerald-900/80" title="Normal: 50-95%"></div>
+            <span className="text-xs text-text-light/70 dark:text-gray-400">50-95%</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full border border-red-400 bg-red-400/10 dark:bg-red-700/80" title="Overfill: ≥95%"></div>
+            <span className="text-xs text-text-light/70 dark:text-gray-400">≥95%</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full border border-orange-400 bg-orange-400/10 dark:bg-orange-700/80" title="Draining"></div>
+            <span className="text-xs text-text-light/70 dark:text-gray-400">Draining</span>
+          </div>
+        </div>
+      </div>
 
       <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-panel-light dark:bg-neutral-900 border border-border-light dark:border-neutral-700" style={{ height: 'auto' }}>
         <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxWidth: '100%' }}>
