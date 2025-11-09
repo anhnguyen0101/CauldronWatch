@@ -319,7 +319,6 @@ export default function Discrepancies(){
       {/* Discrepancies Table */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-<<<<<<< HEAD
           <div className="flex items-center gap-2">
             <h3 className="panel-title">Discrepancies</h3>
             <AIHelpButton 
@@ -339,14 +338,9 @@ export default function Discrepancies(){
             />
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-400">
+            <span className="text-sm text-gray-600 dark:text-gray-400">
               Showing {filteredDiscrepancies.length} of {allDiscrepancies.length}
             </span>
-            {lastFetchTime && (
-              <span className="text-xs text-gray-500">
-                Last updated: {lastFetchTime.toLocaleTimeString()}
-              </span>
-            )}
           </div>
         </div>
         {filteredDiscrepancies.length === 0 ? (

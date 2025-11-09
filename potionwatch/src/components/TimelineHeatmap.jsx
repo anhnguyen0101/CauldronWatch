@@ -367,26 +367,41 @@ export default function TimelineHeatmap({ onCellClick } = {}){
                             onClick={() => handleCellClick(colIndex, c.id)}
                             role="button"
                             className={`flex flex-col items-center justify-center text-text-light dark:text-text-dark text-xs w-16 h-16 rounded-md border ${colorClass} ${
-              isLive 
-                ? 'bg-panel-light dark:bg-neutral-800/60 border-accent/50 dark:border-accent/30 hover:bg-gray-100 dark:hover:bg-neutral-800/80 text-text-light dark:text-gray-200 ring-1 ring-accent/20 dark:ring-accent/10' 
-                : 'bg-panel-light dark:bg-neutral-800/40 border-border-light dark:border-neutral-700 hover:bg-gray-100 dark:hover:bg-neutral-800/60 text-text-light/70 dark:text-gray-400'
-            }`}
-            title={isLive ? 'Pause live updates (stops real-time data)' : 'Resume live updates (enables real-time data)'}
-          >
-            {isLive ? '⏸' : '▶'}
-            <span className="text-xs">{isLive ? 'Pause Live' : 'Resume Live'}</span>
-          </button>
-          
-          {/* Refresh Button */}
-          <button
-            onClick={handleRefresh}
-            disabled={isLoadingHistory}
-            className="px-2 py-1.5 text-sm rounded-md bg-panel-light dark:bg-neutral-800/60 border border-border-light dark:border-neutral-700 text-text-light dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-800/80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-            title="Refresh timeline data"
-          >
-            <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
-          </button>
-        </div>
+                              isLiveCol ? 'ring-2 ring-accent/80 shadow-lg' : ''
+                            } ${
+                              hoveredCauldron === c.id ? 'scale-105 ring-2 ring-accent/50' : ''
+                            } cursor-pointer relative transition-all`}
+                            style={{ boxShadow: `0 0 10px 3px ${glowColor}`, WebkitBoxShadow: `0 0 10px 3px ${glowColor}` }}
+                            title={`${c.name}\n${fill}% — ${drain}L${isLiveCol ? ' (LIVE)' : ''}`}
+                          >
+                            <div className="text-[10px] font-medium">{c.name}</div>
+                            <div className="text-sm font-semibold mt-1">{Math.round(fill)}%</div>
+                            {drain ? (
+                              <div className="text-[10px] text-text-light/70 dark:text-text-dark/70 mt-1">{drain}L</div>
+                            ) : null}
+                            
+                            {alertCount > 0 && (
+                              <motion.div
+                                initial={{ scale: 0.8, opacity: 0 }}
+                                animate={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { scale: [1.3, 1, 1.15, 1], x: [0, -3, 3, 0], opacity: 1 } : { scale: [1.05, 1, 1.05], opacity: 1 } }
+                                transition={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { duration: 0.9 } : { repeat: Infinity, duration: 1.2 } }
+                                className={`absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs text-white font-bold flex items-center justify-center shadow-lg ring-2 ${alertCount >= 3 ? 'bg-orange-500 ring-orange-300' : 'bg-rose-500 ring-red-300'}`}
+                                title={`${alertCount} unresolved alerts`}
+                              >
+                                {alertCount}
+                              </motion.div>
+                            )}
+                            {discrepancy > 0 && (<div className="absolute inset-0 rounded-md ring-2 ring-red-500/60 pointer-events-none" />)}
+                          </div>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="text-xs text-text-light/70 dark:text-gray-400 mb-2">Heatmap (latest on right). Click a cell to apply snapshot.</div>
@@ -469,61 +484,6 @@ export default function TimelineHeatmap({ onCellClick } = {}){
                                 animate={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { scale: [1.3, 1, 1.15, 1], x: [0, -3, 3, 0], opacity: 1 } : { scale: [1.05, 1, 1.05], opacity: 1 } }
                                 transition={ updatedCell && updatedCell.colIndex === colIndex && updatedCell.cauldronId === c.id ? { duration: 0.9 } : { repeat: Infinity, duration: 1.2 } }
                                 className={`absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs text-white font-bold flex items-center justify-center shadow-lg ring-2 ${alertCount >= 3 ? 'bg-orange-500 ring-orange-300' : 'bg-rose-500 ring-red-300'}`}
-                                title={`${alertCount} unresolved alerts`}
-                              >
-                                {alertCount}
-                              </motion.div>
-                            )}
-                            {discrepancy > 0 && (<div className="absolute inset-0 rounded-md ring-2 ring-red-500/60 pointer-events-none" />)}
-                          </div>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {hoveredCell && hoveredCell.metrics && hoveredCell.rect && createPortal((() => {
-        const r = hoveredCell.rect
-        const left = Math.min(window.innerWidth - 260, r.right + 8)
-        const top = Math.max(8, r.top - 8)
-        const isLiveCol = hoveredCell.colIndex === (columns.length - 1)
-        return (
-          <div
-            style={{ position: 'fixed', left, top, zIndex: 60 }}
-            className="w-64 bg-panel-light dark:bg-panel-dark text-text-light dark:text-text-dark p-3 rounded-md shadow-lg border border-border-light dark:border-border-dark"
-          >
-            <div className="font-semibold flex items-center justify-between">
-              <span>{hoveredCell.metrics.name ?? hoveredCell.cauldronId}</span>
-              {isLiveCol && (
-                <span className="text-xs text-accent font-bold">● LIVE</span>
-              )}
-            </div>
-            <div className="text-xs text-neutral-300">Time: {hoveredCell.column?.time || hoveredCell.day?.time}</div>
-            <div className="mt-1 text-sm">
-              Status: <span className="font-medium">{hoveredCell.metrics.status}</span>
-            </div>
-            <div className="text-xs">Fill: {hoveredCell.metrics.fillPercent ?? hoveredCell.metrics.level}%</div>
-            <div className="text-xs">Drain volume: {hoveredCell.metrics.drainVolume}L</div>
-            <div className="text-xs">Discrepancy: {hoveredCell.metrics.discrepancy}</div>
-            <div className="text-xs">Alerts: {hoveredCell.metrics.alertCount}</div>
-            <div className="text-xs">Predicted overflow: {hoveredCell.day?.forecast?.find(f=>f.id===hoveredCell.cauldronId)?.predictedOverflow ? 'Yes' : 'No'}</div>
-          </div>
-        )
-      })(), document.body))}
-    </div>
-  )
-}
-                                transition={{ repeat: Infinity, duration: 1.2 }}
-                                className={`absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs text-white font-bold flex items-center justify-center shadow-lg ring-2 ${
-                                  alertCount >= 3
-                                    ? 'bg-orange-500 ring-orange-300'
-                                    : 'bg-rose-500 ring-red-300'
-                                }`}
                                 title={`${alertCount} unresolved alerts`}
                               >
                                 {alertCount}
