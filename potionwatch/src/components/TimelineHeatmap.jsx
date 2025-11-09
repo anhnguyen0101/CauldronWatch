@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import usePotionStore from '../store/usePotionStore'
 import { motion } from 'framer-motion'
-import { startMockSocket } from '../services/websocket'
+import { startSocket } from '../services/websocket'
 
 const statusColorMap = {
   normal: 'border-cyan-400 bg-cyan-700',
@@ -29,47 +29,17 @@ export default function TimelineHeatmap({ onCellClick } = {}){
 
   const timerRef = useRef(null)
   const scrollRef = useRef(null)
-  
-  // Ref to track isLive state without recreating socket
-  const isLiveRef = useRef(isLive)
-  
-  // Update ref when isLive changes
-  useEffect(() => {
-    isLiveRef.current = isLive
-  }, [isLive])
-
-  // Helper function to scroll to rightmost, contained within widget
-  const scrollToRightmost = (force = false) => {
-    const el = scrollRef.current
-    if (!el) return
-    
-    // Use requestAnimationFrame to ensure DOM is updated after React render
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (el) {
-          const scrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
-          // When force is true (new data), always scroll to show latest
-          // Otherwise, only scroll if we're not already at the rightmost position
-          if (force || Math.abs(el.scrollLeft - scrollLeft) > 10) {
-            el.scrollTo({ 
-              left: scrollLeft, 
-              behavior: 'smooth' 
-            })
-          }
-        }
-      })
-    })
-  }
 
   // init from history
   useEffect(()=>{
     const initial = (history || []).map(h => ({ time: h.time, cauldrons: h.cauldrons || [] }))
     setColumns(initial)
     columnsMapRef.current = new Map(initial.map(c => [c.time, c]))
-    // scroll to rightmost after DOM updates
-    setTimeout(() => {
-      scrollToRightmost()
-    }, 50)
+    // scroll to rightmost
+    const el = scrollRef.current
+    setTimeout(()=>{
+      if(el) el.scrollTo({ left: Math.max(0, el.scrollWidth - el.clientWidth), behavior: 'smooth' })
+    }, 30)
   }, [history?.length])
 
   // helper to read metrics for a cauldron in a column/day
@@ -96,38 +66,85 @@ export default function TimelineHeatmap({ onCellClick } = {}){
       applySnapshot(idx)
       const el = scrollRef.current
       const col = el?.querySelectorAll('.pw-col')?.[idx]
-      if(col && el) {
-        // Use scrollTo to ensure scrolling stays within the container
-        const colRect = col.getBoundingClientRect()
-        const elRect = el.getBoundingClientRect()
-        const scrollLeft = el.scrollLeft + (colRect.left - elRect.left) - (elRect.width / 2) + (colRect.width / 2)
-        el.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' })
-      }
+      if(col && el) col.scrollIntoView({ behavior: 'smooth', inline: 'center' })
       idx += 1
       if(idx >= history.length){ clearInterval(timerRef.current); timerRef.current = null; setPlaying(false) }
     }, 700)
     return ()=>{ if(timerRef.current){ clearInterval(timerRef.current); timerRef.current = null } }
   }, [playing, history])
 
+  // Track drain events and alerts per cauldron for status calculation
+  const drainEventsRef = useRef(new Map()) // cauldron_id -> latest drain event
+  const alertsRef = useRef(new Map()) // cauldron_id -> alert count
+  const discrepanciesRef = useRef(new Map()) // cauldron_id -> has discrepancy
+
   // live socket subscription: collect incoming updates into minute-keyed columns
   useEffect(()=>{
+    if(!isLive) return
+
     const minuteKey = (ts) => { const d = new Date(ts); return d.toISOString().slice(0,16) }
     const MAX_POINTS = 20
 
-    const processEntry = (entry) => {
-      // Check live status using ref to avoid dependency issues
-      if(!isLiveRef.current) return
-      const key = minuteKey(entry.timestamp ?? Date.now())
+    // Helper to calculate status based on level and events
+    const calculateStatus = (level, cauldronId) => {
+      if (level > 95) return 'overfill'
+      if (level < 10) return 'underfill'
+      // Check if there's a recent drain event (within last 10 minutes for better visibility)
+      const drainEvent = drainEventsRef.current.get(cauldronId)
+      if (drainEvent) {
+        const timeSinceDrain = Date.now() - drainEvent.timestamp
+        if (timeSinceDrain < 10 * 60 * 1000) { // 10 minutes
+          console.log(`💧 TimelineHeatmap: ${cauldronId} is draining (${Math.round(timeSinceDrain/1000)}s ago)`)
+          return 'draining'
+        }
+      }
+      // Check if level is increasing (filling)
+      // For now, default to normal unless we have more data
+      return 'normal'
+    }
+
+    const processCauldronUpdate = (cauldronData, timestamp) => {
+      const key = minuteKey(timestamp)
       const map = columnsMapRef.current
       let col = map.get(key)
       if(!col){
-        col = { time: new Date(entry.timestamp ?? Date.now()).toLocaleTimeString(), cauldrons: [] }
+        col = { time: new Date(timestamp).toLocaleTimeString(), cauldrons: [] }
         map.set(key, col)
       }
-      const existing = col.cauldrons.find(c => c.id === entry.cauldron)
-      const newMetrics = { id: entry.cauldron, name: entry.cauldron.toUpperCase(), status: entry.status, fillPercent: entry.fillPercent, drainVolume: entry.drainVolume, alertCount: entry.alertCount, discrepancy: entry.discrepancy }
-      if(existing) Object.assign(existing, newMetrics)
-      else col.cauldrons.push(newMetrics)
+
+      // Process each cauldron in the update
+      cauldronData.forEach(c => {
+        const cauldronId = c.cauldron_id || c.id
+        const level = c.level || 0
+        const fillPercent = Math.round(level)
+        // Recalculate status each time to ensure drain events are reflected
+        const status = calculateStatus(fillPercent, cauldronId)
+        const drainEvent = drainEventsRef.current.get(cauldronId)
+        const drainVolume = drainEvent ? drainEvent.volume_drained || 0 : 0
+        const alertCount = alertsRef.current.get(cauldronId) || 0
+        const hasDiscrepancy = discrepanciesRef.current.get(cauldronId) || false
+
+        const existing = col.cauldrons.find(c => c.id === cauldronId)
+        const newMetrics = { 
+          id: cauldronId, 
+          name: cauldronId.replace('cauldron_', '').toUpperCase(), 
+          status, 
+          fillPercent, 
+          drainVolume, 
+          alertCount, 
+          discrepancy: hasDiscrepancy ? 1 : 0 
+        }
+        if(existing) {
+          // Force update to ensure status changes are reflected
+          Object.assign(existing, newMetrics)
+          // Log status changes for debugging
+          if (existing.status !== status) {
+            console.log(`💧 TimelineHeatmap: Status changed for ${cauldronId}: ${existing.status} -> ${status}`)
+          }
+        } else {
+          col.cauldrons.push(newMetrics)
+        }
+      })
 
       // enforce max points
       while(map.size > MAX_POINTS){
@@ -138,55 +155,144 @@ export default function TimelineHeatmap({ onCellClick } = {}){
       const arr = Array.from(map.values())
       setColumns(arr)
 
-      // mark updated cell briefly
+      // mark updated cells briefly
       const colIndex = arr.length - 1
-      setUpdatedCell({ colIndex, cauldronId: entry.cauldron })
-      setTimeout(()=> setUpdatedCell(null), 900)
+      cauldronData.forEach(c => {
+        const cauldronId = c.cauldron_id || c.id
+        setUpdatedCell({ colIndex, cauldronId })
+        setTimeout(()=> setUpdatedCell(null), 900)
+      })
       
-      // auto-scroll to rightmost after state update and DOM render
-      // Force scroll to show new data
-      scrollToRightmost(true)
+      // auto-scroll to rightmost
+      const el = scrollRef.current
+      if(el) el.scrollTo({ left: Math.max(0, el.scrollWidth - el.clientWidth), behavior: 'smooth' })
     }
 
-    const wrapped = (msg) => {
-      // support mock that emits a batch of levels
-      if(msg && Array.isArray(msg.data)){
-        msg.data.forEach(u => processEntry({ timestamp: Date.now(), cauldron: u.id, fillPercent: u.level, status: 'normal', drainVolume: 0, alertCount: 0 }))
-      } else {
-        processEntry(msg)
+    const handleMessage = (msg) => {
+      if (msg.type === 'levels' && Array.isArray(msg.data)) {
+        // Process cauldron level updates (from initSocket transformation)
+        // msg.data is already an array of {id, level} objects with percentages
+        const timestamp = Date.now()
+        const cauldronData = msg.data.map(u => ({
+          cauldron_id: u.id,
+          id: u.id,
+          level: u.level // Already a percentage
+        }))
+        processCauldronUpdate(cauldronData, timestamp)
+      } else if (msg.type === 'cauldron_update' && msg.data && Array.isArray(msg.data.cauldrons)) {
+        // Process backend cauldron_update format directly from WebSocket
+        const timestamp = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+        // Backend sends raw levels, need to convert to percentage
+        const cauldronData = msg.data.cauldrons.map(c => {
+          const cauldronId = c.cauldron_id || c.id
+          const rawLevel = c.level || 0
+          const maxVolume = c.max_volume || c.capacity || 1000
+          const levelPercent = Math.round((rawLevel / maxVolume) * 100)
+          return {
+            cauldron_id: cauldronId,
+            id: cauldronId,
+            level: levelPercent
+          }
+        })
+        processCauldronUpdate(cauldronData, timestamp)
+      } else if (msg.type === 'drain_event' && msg.data) {
+        // Track drain event for status calculation
+        console.log('💧 TimelineHeatmap: Received drain event', msg.data)
+        const cauldronId = msg.data.cauldron_id
+        if (cauldronId) {
+          const drainTimestamp = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+          drainEventsRef.current.set(cauldronId, {
+            timestamp: drainTimestamp,
+            volume_drained: msg.data.volume_drained || 0
+          })
+          console.log(`💧 TimelineHeatmap: Tracked drain for ${cauldronId}, volume: ${msg.data.volume_drained}L`)
+          
+          // Force re-render of all columns to update status colors
+          // Get current columns and update the affected cauldron's status
+          const currentColumns = Array.from(columnsMapRef.current.values())
+          const updatedColumns = currentColumns.map(col => {
+            const updatedCauldrons = col.cauldrons.map(c => {
+              if (c.id === cauldronId) {
+                // Recalculate status with new drain event
+                const level = c.fillPercent || 0
+                const status = calculateStatus(level, cauldronId)
+                const drainEvent = drainEventsRef.current.get(cauldronId)
+                return {
+                  ...c,
+                  status,
+                  drainVolume: drainEvent ? drainEvent.volume_drained || 0 : 0
+                }
+              }
+              return c
+            })
+            return { ...col, cauldrons: updatedCauldrons }
+          })
+          
+          // Update the map and state
+          // Keep existing keys, just update the columns
+          updatedColumns.forEach(col => {
+            // Find the existing key for this column by matching time
+            for (const [key, existingCol] of columnsMapRef.current.entries()) {
+              if (existingCol.time === col.time) {
+                columnsMapRef.current.set(key, col)
+                break
+              }
+            }
+          })
+          setColumns(updatedColumns)
+          
+          // Also process a new update to add a new column with drain status
+          const cauldrons = usePotionStore.getState().cauldrons
+          const cauldron = cauldrons.find(c => c.id === cauldronId)
+          if (cauldron) {
+            processCauldronUpdate([{ 
+              cauldron_id: cauldronId, 
+              id: cauldronId, 
+              level: cauldron.level || 0 
+            }], drainTimestamp)
+            console.log(`💧 TimelineHeatmap: Updated timeline for ${cauldronId} with drain status (orange)`)
+          } else {
+            console.warn(`💧 TimelineHeatmap: Cauldron ${cauldronId} not found in store`)
+          }
+        }
+      } else if (msg.type === 'discrepancy' && msg.data) {
+        // Track discrepancy
+        const cauldronId = msg.data.cauldron_id
+        if (cauldronId) {
+          discrepanciesRef.current.set(cauldronId, true)
+          // Update alert count
+          const current = alertsRef.current.get(cauldronId) || 0
+          alertsRef.current.set(cauldronId, current + 1)
+          // Process update to show discrepancy
+          const timestamp = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+          const cauldrons = usePotionStore.getState().cauldrons
+          const cauldron = cauldrons.find(c => c.id === cauldronId)
+          if (cauldron) {
+            processCauldronUpdate([{ cauldron_id: cauldronId, id: cauldronId, level: cauldron.level || 0 }], timestamp)
+          }
+        }
       }
     }
-    const stop = startMockSocket(wrapped)
-    return ()=>{ if(stop && typeof stop.close === 'function') stop.close() }
-  }, []) // Empty deps - socket created once, isLive checked via ref
 
-  // Prevent scroll events from bubbling to page level
-  const handleScroll = (e) => {
-    // Stop the scroll event from bubbling up, but allow the scroll to happen within the container
-    e.stopPropagation()
-  }
+    const stop = startSocket(handleMessage)
+    return ()=>{ 
+      if(stop && typeof stop.close === 'function') stop.close() 
+    }
+  }, [isLive])
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden">
-      <div className="flex items-center justify-between mb-2 min-w-0 gap-2 flex-wrap">
-        <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
-          <button aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying(p => !p)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60 flex-shrink-0">{playing ? '⏸' : '▶'}</button>
-          <button aria-label={isLive ? 'Pause live' : 'Resume live'} onClick={() => setIsLive(v => !v)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60 flex-shrink-0 whitespace-nowrap">{isLive ? '⏸ Pause Live' : '▶ Resume Live'}</button>
-          <div className="text-sm text-gray-400 min-w-0">Heatmap (latest on right). Click a cell to apply snapshot.</div>
+    <div className="w-full">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-3">
+          <button aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying(p => !p)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{playing ? '⏸' : '▶'}</button>
+          <button aria-label={isLive ? 'Pause live' : 'Resume live'} onClick={() => setIsLive(v => !v)} className="p-2 rounded-md bg-neutral-800/40 hover:bg-neutral-800/60">{isLive ? '⏸ Pause Live' : '▶ Resume Live'}</button>
+          <div className="text-sm text-gray-400">Heatmap (latest on right). Click a cell to apply snapshot.</div>
         </div>
-        <div className="text-sm text-neutral-400 flex-shrink-0 whitespace-nowrap">Legend: <span className="inline-block w-3 h-3 bg-cyan-500 rounded-full ml-2 mr-1"/>Normal <span className="inline-block w-3 h-3 bg-sky-500 rounded-full ml-2 mr-1"/>Filling <span className="inline-block w-3 h-3 bg-orange-500 rounded-full ml-2 mr-1"/>Draining <span className="inline-block w-3 h-3 bg-red-500 rounded-full ml-2 mr-1"/>Overfill</div>
+        <div className="text-sm text-neutral-400">Legend: <span className="inline-block w-3 h-3 bg-cyan-500 rounded-full ml-2 mr-1"/>Normal <span className="inline-block w-3 h-3 bg-sky-500 rounded-full ml-2 mr-1"/>Filling <span className="inline-block w-3 h-3 bg-orange-500 rounded-full ml-2 mr-1"/>Draining <span className="inline-block w-3 h-3 bg-red-500 rounded-full ml-2 mr-1"/>Overfill</div>
       </div>
 
-      <div 
-        className="relative w-full min-w-0 max-w-full rounded-xl bg-neutral-900 border border-neutral-700 overflow-hidden" 
-        style={{ height: 'auto' }}
-      >
-        <div 
-          ref={scrollRef} 
-          className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent"
-          style={{ minWidth: 0, maxWidth: '100%' }}
-          onScroll={handleScroll}
-        >
+      <div className="relative w-full max-w-full overflow-hidden rounded-xl bg-neutral-900 border border-neutral-700" style={{ height: 'auto' }}>
+        <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden w-full h-full scroll-smooth scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
           <div className="inline-flex min-w-max space-x-2 p-2">
             {columns.map((day, colIndex) => (
               <div key={day.time + colIndex} className={`pw-col flex-shrink-0 px-1`} style={{ minWidth: 96 }}>
