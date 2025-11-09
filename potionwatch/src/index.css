@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  overflow-x: hidden;
+  width: 100%;
+}
+
+body {
+  /* Base (light) theme; dark theme will be applied via the .dark class on the documentElement */
+  @apply bg-background-light text-text-light font-sans transition-colors duration-500;
+  /* dark: variant will apply when .dark is present on html */
+  @apply dark:bg-background-dark dark:text-text-dark;
+}
+
+/* Card style used across dashboard; respects light/dark variations */
+.card {
+  @apply bg-panel-light dark:bg-panel-dark rounded-2xl p-4 shadow-md border border-border-light dark:border-border-dark;
+}
+
+.muted { @apply text-gray-500 dark:text-gray-400 }
+.panel-title { @apply text-text-light dark:text-text-dark font-semibold }
+
+/* subtle hover for interactive items */
+.hover-panel:hover { @apply bg-panel-light/80 dark:bg-panel-dark/80 }
+
+/* Map inner beige panel (Potion Network) */
+.map-beige { @apply bg-[#f4f1ea] }
