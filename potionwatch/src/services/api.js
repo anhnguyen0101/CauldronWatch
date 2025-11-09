@@ -1,4 +1,4 @@
-// API service for connecting to backend
+// API service for connecting to backendhttps://github.com/anhnguyen0101/CauldronWatch/pull/2/conflict?name=potionwatch%252Fsrc%252Fservices%252Fapi.js&ancestor_oid=efe2eb5f5560ae2cb1599f694061ba51d5775643&base_oid=24ae9b287a0a5aa89965e61cfb969e425b9480db&head_oid=fcc704a8da224ee492bee4406d858c8c074de463
 import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -94,27 +94,9 @@ export async function fetchDiscrepancies(severity = null, cauldronId = null) {
   }
 }
 
-// Detect discrepancies (Person 3) - triggers detection and returns results
-export async function detectDiscrepancies(startDate = null, endDate = null) {
-  try {
-    const params = {}
-    if (startDate) params.start_date = startDate
-    if (endDate) params.end_date = endDate
-    
-    const response = await api.post('/api/discrepancies/detect', null, { params })
-    return response.data
-  } catch (error) {
-    console.error('Error detecting discrepancies:', error)
-    return { discrepancies: [], total_discrepancies: 0, critical_count: 0, warning_count: 0, info_count: 0 }
+    snapshot.avgLevel = Math.round(sum / cauldronIds.length)
+    data.push(snapshot)
   }
-}
 
-// Health check
-export async function checkBackendHealth() {
-  try {
-    const response = await api.get('/health')
-    return response.data.status === 'healthy'
-  } catch (error) {
-    return false
-  }
+  return new Promise(res => setTimeout(()=>res(data), 200))
 }

@@ -1,0 +1,305 @@
+import React, { useEffect, useRef, useState } from 'react'
+import bgDark from '../assets/potion_network_bg_dark.png'
+import bgLight from '../assets/potion_network_bg_light.png'
+
+// placeholder sample arrays (will be generated dynamically for 12 nodes if no props provided)
+const sampleCauldrons = []
+const sampleLinks = []
+
+const statusColor = {
+  normal: '#10b981',
+  filling: '#3b82f6',
+  draining: '#f97316',
+  overfill: '#ef4444'
+}
+
+export default function PotionNetworkSVG({ cauldrons: propCauldrons, links: propLinks }){
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  const bg = isDark ? bgDark : bgLight
+
+  const ref = useRef(null)
+  const [dims, setDims] = useState({ width: 800, height: 420 })
+
+  useEffect(()=>{
+    const el = ref.current
+    if(!el) return
+    const setSize = ()=> setDims({ width: Math.max(200, el.clientWidth), height: Math.max(120, el.clientHeight) })
+    setSize()
+    let ro
+    if(window.ResizeObserver){
+      ro = new ResizeObserver(()=> setSize())
+      ro.observe(el)
+    }
+    return ()=> ro && ro.disconnect()
+  }, [])
+
+  const viewW = 600
+  const viewH = 400
+
+  // generate mock data for up to 12 cauldrons if none provided
+  const makeMock = () => {
+    const statuses = ['normal','filling','draining','overfill']
+    const nodes = []
+    for(let i=1;i<=12;i++){
+      nodes.push({ id: `C${i}`, name: `Cauldron ${i}`, level: Math.floor(10 + Math.random()*85), status: statuses[Math.floor(Math.random()*statuses.length)], distance: `${Math.floor(3 + Math.random()*57)}m` })
+    }
+    // deterministic circular connections: connect to next neighbor and every 3rd neighbor
+    const links = []
+    const n = nodes.length
+    for(let i=0;i<n;i++){
+      const a = nodes[i].id
+      const b1 = nodes[(i+1)%n].id
+      const b2 = nodes[(i+3)%n].id
+      if(!links.find(l=> (l.from===a && l.to===b1) || (l.from===b1 && l.to===a))) links.push({ from: a, to: b1 })
+      if(!links.find(l=> (l.from===a && l.to===b2) || (l.from===b2 && l.to===a))) links.push({ from: a, to: b2 })
+    }
+    return { nodes, links }
+  }
+
+  const { nodes: genNodes, links: genLinks } = makeMock()
+  const cauldrons = (propCauldrons && propCauldrons.length) ? propCauldrons : (propCauldrons === null ? [] : genNodes)
+  const links = (propLinks && propLinks.length) ? propLinks : genLinks
+
+  // px per view-unit (how many pixels correspond to 1 viewBox unit)
+  const pxPerViewY = dims.height / viewH
+
+  // preferred node radius in pixels (fixed smaller size so 12 cauldrons fit)
+  // user-requested exact radius ≈ 16px
+  const preferredRadiusPx = 16
+  // convert preferred pixel radius into viewBox units (using vertical scale)
+  // shrink nodes when there are many cauldrons
+  const count = Math.max(1, cauldrons.length)
+  const shrinkFactor = Math.max(0.45, Math.min(1, 6 / count))
+  const radius = Math.max(3, (preferredRadiusPx * shrinkFactor) / pxPerViewY)
+
+  const clamp = (v,min,max) => Math.max(min, Math.min(max, v))
+
+  // Auto-generate circular layout positions for up to many nodes (evenly spaced around center)
+  const centerX = viewW / 2
+  const centerY = viewH / 2 - (viewH * 0.04) // slight upward offset
+  const layoutMargin = Math.max(32, Math.min(viewW, viewH) * 0.12)
+  const layoutRadius = Math.max(60, Math.min((Math.min(viewW, viewH) / 2) - layoutMargin, (viewW / 2) - layoutMargin)) - radius * 2
+
+  const autoPositions = cauldrons.map((c, i) => {
+    const a = -Math.PI / 2 + (i * (2 * Math.PI / count))
+    const x = centerX + layoutRadius * Math.cos(a)
+    const y = centerY + layoutRadius * Math.sin(a)
+    return { x, y, angle: a }
+  })
+
+  // compute position: use auto layout positions so nodes are evenly distributed
+  const pos = (c) => {
+    const idx = cauldrons.findIndex(x => x.id === c.id)
+    if (idx >= 0 && autoPositions[idx]) return autoPositions[idx]
+    // fallback: interpret percentage coords (0-100) to view coords
+    return { x: clamp((Number(c.x || 0) / 100) * viewW, 8, viewW - 8), y: clamp((Number(c.y || 0) / 100) * viewH, 12, viewH - 12) }
+  }
+
+  const pathFor = (a,b) => {
+    const pa = pos(a)
+    const pb = pos(b)
+    const mx = (pa.x + pb.x)/2
+    const my = (pa.y + pb.y)/2
+    const dx = pb.x - pa.x
+    const dy = pb.y - pa.y
+    const cx = mx - dy * 0.12
+    const cy = my + dx * 0.08
+    return `M ${pa.x} ${pa.y} Q ${cx} ${cy} ${pb.x} ${pb.y}`
+  }
+
+  // path to market (center) — slightly angled
+  const market = { id: 'M', name: 'Enchanted Market' }
+  const marketPos = { x: centerX, y: centerY }
+  const pathToMarket = (c) => {
+    const pa = pos(c)
+    const pb = marketPos
+    // control point pulls slightly toward center to create a gentle curve
+    const mx = (pa.x + pb.x)/2
+    const my = (pa.y + pb.y)/2
+    const dx = pb.x - pa.x
+    const dy = pb.y - pa.y
+    const cx = mx + dy * 0.06
+    const cy = my - dx * 0.06
+    return `M ${pa.x} ${pa.y} Q ${cx} ${cy} ${pb.x} ${pb.y}`
+  }
+
+  const circ = 2 * Math.PI * radius
+  const scale = viewW / 100
+
+  // helper: convert hex color like #rrggbb to rgba with alpha
+  const hexToRgba = (hex, alpha=1) => {
+    const h = hex.replace('#','')
+    const r = parseInt(h.substring(0,2),16)
+    const g = parseInt(h.substring(2,4),16)
+    const b = parseInt(h.substring(4,6),16)
+    return `rgba(${r},${g},${b},${alpha})`
+  }
+
+  return (
+    <div ref={ref} className="w-full h-full relative overflow-hidden flex items-center justify-center rounded-2xl border border-gray-600/40">
+      <svg viewBox={`0 0 ${viewW} ${viewH}`} width="100%" height="100%" className="w-full h-auto max-h-[450px]" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="1.8" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          <linearGradient id="gradPotion" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#7dd3fc" />
+            <stop offset="50%" stopColor="#06b6d4" />
+            <stop offset="100%" stopColor="#7dd3fc" />
+          </linearGradient>
+
+          {/* small soft overlay to help nodes pop */}
+          <linearGradient id="bgOverlay" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#000" stopOpacity="0" />
+            <stop offset="100%" stopColor="#000" stopOpacity={isDark ? 0.12 : 0.04} />
+          </linearGradient>
+        </defs>
+
+  {/* background image inside SVG so it scales with viewBox */}
+  <image href={bg} x="0" y="0" width={viewW} height={viewH} preserveAspectRatio="xMidYMid slice" />
+  {/* overlay rect to subtly darken the bottom */}
+  <rect x="0" y="0" width={viewW} height={viewH} fill="url(#bgOverlay)" />
+
+        {/* glowing potion flow links (thinner, gradient-from-nodes-to-transparent-middle) */}
+        <g strokeLinecap="round" fill="none">
+          {links.map((link, i) => {
+            const a = cauldrons.find(c => c.id === link.from)
+            const b = cauldrons.find(c => c.id === link.to)
+            if (!a || !b) return null
+            const pa = pos(a)
+            const pb = pos(b)
+            const d = pathFor(a,b)
+            const dash = 5 * scale
+            const urgent = ['overfill', 'draining'].includes(a.status) || ['overfill', 'draining'].includes(b.status)
+            const bright = urgent ? '#ff9b7a' : '#9ef6ff'
+            const midTransparent = 'rgba(160,240,255,0)'
+            const baseWidth = 0.9 * scale
+
+            // gradient id per link
+            const gid = `linkGrad-${i}`
+
+            return (
+              <g key={i}>
+                <defs>
+                  <linearGradient id={gid} gradientUnits="userSpaceOnUse" x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}>
+                    <stop offset="0%" stopColor={bright} stopOpacity={1} />
+                    <stop offset="45%" stopColor={midTransparent} stopOpacity={0} />
+                    <stop offset="55%" stopColor={midTransparent} stopOpacity={0} />
+                    <stop offset="100%" stopColor={bright} stopOpacity={1} />
+                  </linearGradient>
+                </defs>
+
+                {/* thin base with gradient glow */}
+                <path d={d} stroke={`url(#${gid})`} strokeWidth={baseWidth} style={{filter: urgent ? 'url(#glow)' : undefined}} strokeOpacity={0.95} />
+
+                {/* animated dashed flow */}
+                <path d={d} stroke={bright} strokeWidth={0.5 * scale} strokeDasharray={`${dash} ${dash*2}`} strokeLinecap="round" strokeOpacity={0.95}>
+                  <animate attributeName="stroke-dashoffset" from="0" to={`${-30 * scale}`} dur={urgent ? '2.6s' : '4s'} repeatCount="indefinite" />
+                </path>
+
+                {/* motion path id for spark (invisible) */}
+                <path id={`link-path-${i}`} d={d} fill="none" stroke="transparent" strokeWidth={0} />
+              </g>
+            )
+          })}
+        </g>
+
+        {/* shipment links: each cauldron -> market */}
+        <g strokeLinecap="round" fill="none">
+          {cauldrons.map((c, i) => {
+            const pa = pos(c)
+            const pb = marketPos
+            const d = pathToMarket(c)
+            const gid = `shipGrad-${i}`
+            const bright = '#ffd36b'
+            const dash = 6 * scale
+            return (
+              <g key={`ship-${c.id}`}>
+                <defs>
+                  <linearGradient id={gid} gradientUnits="userSpaceOnUse" x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}>
+                    <stop offset="0%" stopColor={bright} stopOpacity={0.95} />
+                    <stop offset="60%" stopColor={bright} stopOpacity={0.12} />
+                    <stop offset="100%" stopColor={bright} stopOpacity={0.95} />
+                  </linearGradient>
+                </defs>
+
+                <path id={`ship-path-${i}`} d={d} stroke={`url(#${gid})`} strokeWidth={0.9 * scale} strokeOpacity={0.65} strokeLinecap="round" strokeDasharray={`${dash} ${dash*1.8}`}>
+                  <animate attributeName="stroke-dashoffset" from="0" to={`${-30 * scale}`} dur="3.6s" repeatCount="indefinite" />
+                </path>
+
+                {/* distance/time label along path */}
+                <text fontSize={2.4 * scale} fill={isDark ? '#f8ecd2' : '#6b4a00'}>
+                  <textPath href={`#ship-path-${i}`} startOffset="50%" textAnchor="middle">{c.distance}</textPath>
+                </text>
+              </g>
+            )
+          })}
+        </g>
+        {/* cauldron nodes */}
+        {cauldrons.map((c, idx) => {
+          const p = pos(c)
+          const ap = autoPositions[idx] || { angle: 0 }
+          const pct = Math.max(0, Math.min(100, Number(c.level) || 0))
+          const color = statusColor[c.status] || statusColor.normal
+          const fillLen = (pct/100) * circ
+          // aura color with alpha 0.25
+          const aura = hexToRgba(color, 0.25)
+          // label offset outward from center
+          const dx = p.x - centerX
+          const dy = p.y - centerY
+          const dist = Math.sqrt(dx*dx + dy*dy) || 1
+          const nx = dx / dist
+          const ny = dy / dist
+          const labelOffset = 6 // view units outward
+          const lx = p.x + nx * (radius + labelOffset)
+          const ly = p.y + ny * (radius + labelOffset)
+
+          return (
+            <g key={c.id} transform={`translate(${p.x}, ${p.y})`}>
+              {/* subtle aura */}
+              <circle r={radius * 1.6} fill={aura} opacity={0.95} style={{filter: 'url(#glow)'}} />
+
+              {/* outer ring with slow pulsing animation */}
+              <g>
+                <circle r={radius + 0.35} fill="#071427" stroke={isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.06)'} strokeWidth={0.38 * scale} />
+                <circle r={radius + 0.35} fill="none" stroke={hexToRgba(color,0.9)} strokeWidth={0.8 * scale} strokeOpacity={0.9} strokeDasharray={`${Math.max(6, radius*2)} ${Math.max(8,radius*3)}`} strokeLinecap="round">
+                  <animate attributeName="opacity" values="1;0.6;1" dur="3.6s" repeatCount="indefinite" />
+                  <animateTransform attributeName="transform" attributeType="XML" type="scale" values="1;1.04;1" dur="3.6s" repeatCount="indefinite" />
+                </circle>
+              </g>
+
+              {/* colored ring indicating level */}
+              <g transform="rotate(-90)">
+                <circle r={radius} fill="none" stroke={color} strokeWidth={0.85 * scale} strokeDasharray={`${fillLen} 999`} strokeLinecap="round" style={{transition: 'stroke-dasharray 0.4s ease, stroke 0.4s ease'}} />
+              </g>
+
+              {/* inner glass */}
+              <circle r={Math.max(2, radius-1.2)} fill={isDark ? 'rgba(6,12,18,0.9)' : 'rgba(255,255,255,0.96)'} stroke="rgba(0,0,0,0.04)" strokeWidth={0.08 * scale} />
+
+              {/* percentage (smaller) */}
+              <text x={0} y={0.5 * scale} textAnchor="middle" fontSize={3.4 * scale} fontWeight={700} fill={isDark ? '#e6f0f6' : '#06202a'}>{pct}%</text>
+
+              {/* name offset outward */}
+              <text x={lx - p.x} y={ly - p.y} textAnchor="middle" fontSize={2.2 * scale} fill={isDark ? '#9ca3af' : '#334155'}>{c.name}</text>
+            </g>
+          )
+        })}
+
+        {/* market node at center */}
+        <g transform={`translate(${marketPos.x}, ${marketPos.y})`}>
+          <circle r={radius * 1.6} fill={hexToRgba('#ffd36b', 0.18)} style={{filter: 'url(#glow)'}} />
+          <circle r={radius * 1.15} fill="#ffd36b" stroke={hexToRgba('#5a3c00',0.12)} strokeWidth={0.6 * scale} />
+          <circle r={radius * 0.75} fill={isDark ? '#1a1200' : '#fff7e6'} />
+          <text x={0} y={radius * 1.8} textAnchor="middle" fontSize={3 * scale} fill={isDark ? '#ffe9b5' : '#6b4a00'}>Enchanted Market</text>
+        </g>
+
+        {/* Enchanted Market removed per request */}
+      </svg>
+    </div>
+  )
+}

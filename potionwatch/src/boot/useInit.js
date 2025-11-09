@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { initSocket } from './initSocket'
-import { fetchHistory, fetchCauldrons, fetchLatestLevels, checkBackendHealth } from '../services/api'
+import { fetchHistory } from '../services/api'
 import usePotionStore from '../store/usePotionStore'
 
 export default function useInit(){
@@ -91,7 +91,6 @@ export default function useInit(){
         console.error('❌ Error loading history from backend:', err)
       })
 
-    // Initialize WebSocket connection
     const sock = initSocket()
     return ()=> sock.close()
   }, [])
