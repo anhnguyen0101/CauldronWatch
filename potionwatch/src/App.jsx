@@ -10,7 +10,7 @@ import Settings from './pages/Settings'
 import useInit from './boot/useInit'
 
 export default function App() {
-  // initialize mock API + websocket on app mount
+  // initialize backend connection and websocket on app mount
   useInit()
   return (
     <div className="min-h-screen flex">

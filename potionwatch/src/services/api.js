@@ -1,56 +1,98 @@
-// Mock API functions
-export async function fetchHistory(){
-  // produce 10 days of mock per-cauldron snapshots
-  // cauldrons used here should match `usePotionStore` initial ids: a1, b4, c2
-  const cauldronIds = [
-    { id: 'a1', name: 'A1' },
-    { id: 'b4', name: 'B4' },
-    { id: 'c2', name: 'C2' }
-  ]
+// API service for connecting to backendhttps://github.com/anhnguyen0101/CauldronWatch/pull/2/conflict?name=potionwatch%252Fsrc%252Fservices%252Fapi.js&ancestor_oid=efe2eb5f5560ae2cb1599f694061ba51d5775643&base_oid=24ae9b287a0a5aa89965e61cfb969e425b9480db&head_oid=fcc704a8da224ee492bee4406d858c8c074de463
+import axios from 'axios'
 
-  const now = Date.now()
-  const days = 10
-  const data = []
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-  for(let d = 0; d < days; d++){
-    const date = new Date(now - (days - d) * 24 * 60 * 60000)
-    const snapshot = {
-      time: date.toLocaleDateString(),
-      cauldrons: [],
-      // optional network-level aggregates for backwards compatibility
-      avgLevel: 0,
-      // forecast for next day (per-cauldron lighter row)
-      forecast: []
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Fetch all cauldrons
+export async function fetchCauldrons() {
+  const response = await api.get('/api/cauldrons')
+  return response.data
+}
+
+// Fetch latest levels for all cauldrons
+export async function fetchLatestLevels() {
+  const response = await api.get('/api/data/latest')
+  return response.data
+}
+
+// Fetch historical data
+export async function fetchHistory(cauldronId = null, startDate = null, endDate = null) {
+  const params = {}
+  if (cauldronId) params.cauldron_id = cauldronId
+  if (startDate) params.start = startDate
+  if (endDate) params.end = endDate
+  
+  const response = await api.get('/api/data', { params })
+  
+  // Transform to format expected by frontend
+  // Group by timestamp and calculate average level
+  const grouped = {}
+  response.data.forEach(point => {
+    const timeKey = new Date(point.timestamp).toLocaleDateString()
+    if (!grouped[timeKey]) {
+      grouped[timeKey] = { time: timeKey, levels: [] }
     }
+    grouped[timeKey].levels.push(point.level)
+  })
+  
+  return Object.values(grouped).map(snapshot => ({
+    time: snapshot.time,
+    avgLevel: Math.round(snapshot.levels.reduce((a, b) => a + b, 0) / snapshot.levels.length)
+  }))
+}
 
-    let sum = 0
-    cauldronIds.forEach((c, i) => {
-      // deterministic pseudo-random metrics using trig functions
-      const base = 40 + 30 * Math.abs(Math.sin((d + i) / 2))
-      const variance = Math.round(10 * Math.cos((d * 1.3 + i)))
-      const level = Math.max(0, Math.min(100, Math.round(base + variance)))
-      const fillPercent = Math.round(level)
-      const drainVolume = Math.round(Math.max(0, 100 - level) * (Math.abs(Math.sin(d + i)) * 0.6))
-      const discrepancy = (Math.random() < 0.2) ? Math.round(Math.random() * 10) : 0
-      const alertCount = (Math.random() < 0.15) ? Math.round(Math.random() * 3) : 0
-      const predictedOverflow = (level > 85) && (Math.random() < 0.35)
-      const status = predictedOverflow ? 'overfill' : (level < 30 ? 'underfill' : (d % 3 === 0 ? 'draining' : 'filling'))
+// Fetch tickets
+export async function fetchTickets() {
+  const response = await api.get('/api/tickets')
+  return response.data.transport_tickets || response.data.tickets || []
+}
 
-      snapshot.cauldrons.push({
-        id: c.id,
-        name: c.name,
-        status,
-        fillPercent,
-        drainVolume,
-        discrepancy,
-        alertCount,
-        predictedOverflow,
-        level
-      })
-      sum += level
-      // small per-cauldron forecast (next day) - lighter information
-      snapshot.forecast.push({ id: c.id, predictedOverflow: Math.random() < 0.2, predictedFillPercent: Math.max(0, Math.min(100, fillPercent + Math.round((Math.random() - 0.5) * 10))) })
-    })
+// Fetch drain events for a cauldron
+export async function fetchDrainEvents(cauldronId, date = null) {
+  if (date) {
+    const response = await api.get(`/api/analysis/drains/${cauldronId}/${date}`)
+    return response.data.drain_events || []
+  } else {
+    const response = await api.get(`/api/analysis/cauldrons/${cauldronId}`)
+    return response.data.drain_events || []
+  }
+}
+
+// Fetch discrepancies (Person 3)
+export async function fetchDiscrepancies(severity = null, cauldronId = null) {
+  // Build params object (used in both initial request and retry)
+  const params = {}
+  if (severity) params.severity = severity
+  if (cauldronId) params.cauldron_id = cauldronId
+  
+  try {
+    const response = await api.get('/api/discrepancies', { params })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching discrepancies:', error)
+    // If no cache exists, try to detect first
+    if (error.response?.status === 404) {
+      console.log('No cached discrepancies, running detection...')
+      try {
+        await api.post('/api/discrepancies/detect')
+        // Retry fetching with same params
+        const retryResponse = await api.get('/api/discrepancies', { params })
+        return retryResponse.data
+      } catch (detectError) {
+        console.error('Error detecting discrepancies:', detectError)
+        return { discrepancies: [], total_discrepancies: 0, critical_count: 0, warning_count: 0, info_count: 0 }
+      }
+    }
+    return { discrepancies: [], total_discrepancies: 0, critical_count: 0, warning_count: 0, info_count: 0 }
+  }
+}
 
     snapshot.avgLevel = Math.round(sum / cauldronIds.length)
     data.push(snapshot)
