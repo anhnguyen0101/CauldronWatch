@@ -29,16 +29,16 @@ export async function fetchHistory(cauldronId = null, startDate = null, endDate 
     if (cauldronId) params.cauldron_id = cauldronId
     if (startDate) params.start = startDate
     if (endDate) params.end = endDate
-    
+
     // Add limit to prevent fetching too much data (max 1000 points)
     params.limit = 1000
-    
+
     console.log('📊 Fetching history with params:', { cauldronId, startDate, endDate, limit: params.limit })
     const startTime = Date.now()
     const response = await api.get('/api/data', { params })
     const fetchTime = Date.now() - startTime
     console.log(`📊 Fetched ${response.data.length} data points in ${fetchTime}ms`)
-    
+
     // Transform to format expected by frontend
     // Group by minute (not by day) for better timeline granularity
     const grouped = {}
@@ -47,26 +47,26 @@ export async function fetchHistory(cauldronId = null, startDate = null, endDate 
       const date = new Date(point.timestamp)
       const timeKey = date.toISOString().slice(0, 16) // YYYY-MM-DDTHH:mm
       if (!grouped[timeKey]) {
-        grouped[timeKey] = { 
-          time: date.toLocaleTimeString(), 
+        grouped[timeKey] = {
+          time: date.toLocaleTimeString(),
           timestamp: date.getTime(), // Store timestamp for filtering
-          levels: [], 
-          cauldrons: [] 
+          levels: [],
+          cauldrons: []
         }
       }
       grouped[timeKey].levels.push(point.level)
       // Store per-cauldron data for timeline
       // Use capacity from cauldronsMap if available, otherwise from point or default
-      const capacity = cauldronsMap?.get(point.cauldron_id)?.capacity || 
-                       point.capacity || 
-                       point.max_volume || 
-                       1000
+      const capacity = cauldronsMap?.get(point.cauldron_id)?.capacity ||
+        point.capacity ||
+        point.max_volume ||
+        1000
       grouped[timeKey].cauldrons.push({
         id: point.cauldron_id,
         level: Math.round((point.level / capacity) * 100) // Convert to percentage
       })
     })
-    
+
     // Convert to array and sort by timestamp
     const result = Object.values(grouped)
       .map(snapshot => ({
@@ -79,7 +79,7 @@ export async function fetchHistory(cauldronId = null, startDate = null, endDate 
         // Sort by timestamp (more reliable than time string)
         return (a.timestamp || 0) - (b.timestamp || 0)
       })
-    
+
     console.log(`📊 Transformed to ${result.length} timeline snapshots`)
     return result
   } catch (error) {
@@ -112,7 +112,7 @@ export async function fetchDiscrepancies(severity = null, cauldronId = null) {
   const params = {}
   if (severity) params.severity = severity
   if (cauldronId) params.cauldron_id = cauldronId
-  
+
   try {
     const response = await api.get('/api/discrepancies', { params })
     return response.data
@@ -141,7 +141,7 @@ export async function detectDiscrepancies(startDate = null, endDate = null) {
     const params = {}
     if (startDate) params.start_date = startDate
     if (endDate) params.end_date = endDate
-    
+
     const response = await api.post('/api/discrepancies/detect', null, { params })
     return response.data
   } catch (error) {
