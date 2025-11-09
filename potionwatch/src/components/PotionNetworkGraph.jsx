@@ -42,7 +42,7 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
   // layout: if nodes provide lat/lng use them with proper geographic bounds, otherwise use x,y or auto-circle
   const viewW = 800
   const viewH = 600
-  const margin = 50 // Margin for nodes near edges
+  const margin = 40 // Reduced margin to fill more space
   const centerX = viewW/2
   const centerY = viewH/2
 
@@ -101,11 +101,23 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
     const effectiveLatRange = latRange || 0.02 // ~2km at equator
     const effectiveLngRange = lngRange || 0.02 // ~2km at equator
 
+    // Calculate center first
+    const centerLat = (minLat + maxLat) / 2
+    const centerLng = (minLng + maxLng) / 2
+    
+    // Use symmetric padding around center to ensure graph is centered
+    const latPadding = effectiveLatRange * padding
+    const lngPadding = effectiveLngRange * padding
+    
+    // Make sure padding is symmetric for better centering
+    const maxRange = Math.max(effectiveLatRange, effectiveLngRange)
+    const symmetricPadding = maxRange * padding
+    
     const bounds = {
-      minLat: minLat - effectiveLatRange * padding,
-      maxLat: maxLat + effectiveLatRange * padding,
-      minLng: minLng - effectiveLngRange * padding,
-      maxLng: maxLng + effectiveLngRange * padding
+      minLat: centerLat - (effectiveLatRange / 2 + symmetricPadding),
+      maxLat: centerLat + (effectiveLatRange / 2 + symmetricPadding),
+      minLng: centerLng - (effectiveLngRange / 2 + symmetricPadding),
+      maxLng: centerLng + (effectiveLngRange / 2 + symmetricPadding)
     }
     
     if (process.env.NODE_ENV === 'development') {
@@ -286,12 +298,12 @@ function PotionNetworkGraph({ data = { nodes: [], links: [] }, className = '' })
 
   return (
     <div ref={ref} className={`card relative overflow-hidden rounded-2xl border border-neutral-700 ${className}`}>
-      <div className="p-4">
-        <h3 className="panel-title mb-3">Potion Network</h3>
+      <div className="px-4 pt-4 pb-2">
+        <h3 className="panel-title">Potion Network</h3>
       </div>
 
       <div className="w-full h-[520px] relative">
-        <svg viewBox={`0 0 ${viewW} ${viewH}`} preserveAspectRatio="xMidYMid slice" className="w-full h-full">
+        <svg viewBox={`0 0 ${viewW} ${viewH}`} preserveAspectRatio="xMidYMid meet" className="w-full h-full">
           <defs>
             {/* background image */}
             <pattern id="bgPattern" patternUnits="objectBoundingBox" width="1" height="1">
